@@ -23,12 +23,12 @@ void strarray_push(struct strarray* array, char* val, unsigned char bIsHyphenPoi
 {
 	if(array->length >= array->capacity)
 	{
-		array->capacity <<= 1;
+		array->capacity = max((array->capacity<<1), (array->capacity + array->length));
 		array->strings = (cv_t*) realloc(array->strings, sizeof(cv_t) * array->capacity);
 		array->hyphenpoints = (unsigned char*) realloc(array->hyphenpoints, sizeof(unsigned char) * array->capacity);
+		memset(&array->strings[array->length], 0, sizeof(cv_t) * (array->capacity - array->length));
+		memset(&array->hyphenpoints[array->length], 0, sizeof(unsigned char) * (array->capacity - array->length));
 	}
-	memset(&array->strings[array->length], 0, sizeof(cv_t));
-	memset(&array->hyphenpoints[array->length], 0, sizeof(unsigned char));
 	array->hyphenpoints[array->length] = bIsHyphenPoint;
 	cv_init(&array->strings[array->length], 16);
 	cv_appendstr(&(array->strings[array->length]), val);
@@ -125,7 +125,7 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 		else if(ret)
 		{
 			size_t wordlen = strlen(ret);
-			if(0 && CanWordBeSplit(ret, wordlen))
+			if(CanWordBeSplit(ret, wordlen))
 			{
 				cv_t a, b;
 				cv_init(&a, wordlen);
@@ -186,7 +186,7 @@ void FindParagraphs(const char* text, size_t length, struct intstack* paragraphl
 	while(found);
 }
 
-void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned char bIndentFirstWord)
+void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	//Uses a shortest paths method to solve optimization problem
 	strarray_t words;
@@ -238,8 +238,7 @@ void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned 
 			else
 			{
 				//We don't need to optimize for the alignment of the last line
-				w = offsets.data[j] - offsets.data[i] + j - i - 1;
-				//w = width;
+				w = width;
 			}
 
 			if(w > width)
@@ -252,7 +251,7 @@ void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned 
 
 			if(cost < minima[j])
 			{
-//				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= width<<1))
+				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
 				{
 					wsincelasthyphen = 0;
 					minima[j] = cost;

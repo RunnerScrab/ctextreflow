@@ -29,6 +29,6 @@ void intstack_push(struct intstack* stack, int val);
 void intstack_destroy(struct intstack* stack);
 
 void TokenizeString(const char* input, size_t inputlen, strarray_t* out);
-void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned char);
+void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char);
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);
 #endif

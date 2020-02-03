@@ -211,8 +211,9 @@ void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned 
 
 	for(idx = 0; idx < count; ++idx)
 	{
-		intstack_push(&offsets, intstack_peek(&offsets) + words.strings[idx].length);
+		intstack_push(&offsets, intstack_peek(&offsets) + words.strings[idx].length - 1);
 	}
+	printf("Last offset: %d\nFile length: %d\n", intstack_peek(&offsets), len);
 
 	int* minima = (int*) malloc(sizeof(int) * (count+1));
 	int* breaks = (int*) malloc(sizeof(int) * (count + 1));

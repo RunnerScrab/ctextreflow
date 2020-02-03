@@ -93,8 +93,9 @@ void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outw
 {
 	size_t halflen = inwordlen / 2;
 	cv_strncpy(outword_a, inword, halflen);
+	cv_push(outword_a, 0);
 	cv_strncpy(outword_b, &inword[halflen], inwordlen - halflen);
-
+	cv_push(outword_b, 0);
 }
 
 unsigned int CanWordBeSplit(const char* word, size_t len)
@@ -211,7 +212,7 @@ void ReflowText(const char* text, size_t len, int width, cv_t* output, unsigned 
 
 	for(idx = 0; idx < count; ++idx)
 	{
-		intstack_push(&offsets, intstack_peek(&offsets) + words.strings[idx].length - 1);
+		intstack_push(&offsets, intstack_peek(&offsets) + words.strings[idx].length);
 	}
 	printf("Last offset: %d\nFile length: %d\n", intstack_peek(&offsets), len);
 

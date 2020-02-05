@@ -320,7 +320,7 @@ static void FindParagraphs(const char* text, size_t length, struct reflow_intsta
 	while(found);
 }
 
-static void PerformReflow(const reflow_strarray_t* words, const int* breaks, cv_t* output)
+static inline void PerformReflow(const reflow_strarray_t* words, const int* breaks, cv_t* output)
 {
 	size_t count = words->length, idx = 0;
 	int i = 0, j = count;
@@ -656,7 +656,10 @@ static void StripNewline(const char* input, size_t inputlen, char* out, size_t b
 	while(found);
 }
 
-void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+typedef void (*ReflowParagraphFn)(const char*, size_t, const int, cv_t*, unsigned char);
+
+static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces,
+	ReflowParagraphFn rpfn)
 {
 	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
 	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
@@ -678,7 +681,7 @@ void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const i
 
 		cv_clear(&buffer);
 
-		ReflowParagraphBinary(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
 
 		cv_strcat(output, buffer.data);
 	}
@@ -690,32 +693,10 @@ void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const i
 
 void ReflowText(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
 {
-	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
-	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
-	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
+	ReflowTextImpl(input, len, output, width, num_indent_spaces, ReflowParagraph);
+}
 
-	reflow_intstack_t paragraphbounds;
-	reflow_intstack_create(&paragraphbounds, 8);
-
-	cv_t buffer;
-	cv_init(&buffer, len);
-
-	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
-
-	size_t idx = 0;
-	for(; idx < paragraphbounds.length; idx += 2)
-	{
-		int start = paragraphbounds.data[idx];
-		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
-
-		cv_clear(&buffer);
-
-		ReflowParagraph(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
-
-		cv_strcat(output, buffer.data);
-	}
-
-	reflow_intstack_destroy(&paragraphbounds);
-	cv_destroy(&buffer);
-	free(nlstrippedbuf);
+void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+{
+	ReflowTextImpl(input, len, output, width, num_indent_spaces, ReflowParagraphBinary);
 }

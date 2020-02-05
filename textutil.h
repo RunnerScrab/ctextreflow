@@ -3,13 +3,18 @@
 #include <stdarg.h>
 #include "charvector.h"
 
+typedef struct reflow_word
+{
+	cv_t string;
+	unsigned char bHyphenPoint;
+	unsigned char bEscaped;
+} reflow_word_t;
+
 typedef struct reflow_strarray
 {
-	cv_t* strings;
+	reflow_word_t* strings;
 	size_t length;
 	size_t capacity;
-	unsigned char* hyphenpoints;
-	unsigned char* escapedwords;
 } reflow_strarray_t;
 
 int reflow_strarray_create(reflow_strarray_t* array, size_t initial_size);

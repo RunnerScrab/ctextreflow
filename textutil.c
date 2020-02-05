@@ -14,16 +14,11 @@ int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 {
 	array->length = 0;
 	array->capacity = initial_size;
-	size_t strarrsize = sizeof(cv_t) * initial_size;
-	size_t flagsize = sizeof(unsigned char) * initial_size;
 
-	array->strings = (cv_t*) malloc(strarrsize);
-	array->hyphenpoints = (unsigned char*) malloc(flagsize);
-	array->escapedwords = (unsigned char*) malloc(flagsize);
-
+	size_t strarrsize = sizeof(reflow_word_t) * initial_size;
+	array->strings = (reflow_word_t*) malloc(strarrsize);
 	memset(array->strings, 0, strarrsize);
-	memset(array->hyphenpoints, 0, flagsize);
-	memset(array->escapedwords, 0, flagsize);
+
 	return array->strings ? 0 : -1;
 }
 
@@ -31,19 +26,16 @@ void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned cha
 {
 	if(array->length >= array->capacity)
 	{
-		array->capacity = max((array->capacity<<1), (array->capacity + array->length));
-		array->strings = (cv_t*) realloc(array->strings, sizeof(cv_t) * array->capacity);
-		array->hyphenpoints = (unsigned char*) realloc(array->hyphenpoints, sizeof(unsigned char) * array->capacity);
-		array->escapedwords = (unsigned char*) realloc(array->escapedwords, sizeof(unsigned char) * array->capacity);
-		size_t lendiff = array->capacity - array->length;
-		memset(&array->strings[array->length], 0, sizeof(cv_t) * lendiff);
-		memset(&array->hyphenpoints[array->length], 0, sizeof(unsigned char) * lendiff);
-		memset(&array->escapedwords[array->length], 0, sizeof(unsigned char) * lendiff);
+		array->capacity = max((array->capacity<<3), (array->capacity + array->length));
+		size_t strarrsize = sizeof(reflow_word_t) * array->capacity;
+		array->strings = (reflow_word_t*) realloc(array->strings, strarrsize);
+		memset(&array->strings[array->length], 0, sizeof(reflow_word_t) * (array->capacity - array->length));
 	}
-	array->hyphenpoints[array->length] = bIsHyphenPoint;
-	array->escapedwords[array->length] = bIsEscaped;
-	cv_init(&array->strings[array->length], 16);
-	cv_appendstr(&(array->strings[array->length]), val);
+	reflow_word_t* pword = &array->strings[array->length];
+	pword->bHyphenPoint = bIsHyphenPoint;
+	pword->bEscaped = bIsEscaped;
+	cv_init(&pword->string, 16);
+	cv_appendstr(&pword->string, val);
 
 	++array->length;
 }
@@ -53,10 +45,8 @@ void reflow_strarray_destroy(struct reflow_strarray* array)
 	size_t idx = 0;
 	for(; idx < array->length; ++idx)
 	{
-		cv_destroy(&array->strings[idx]);
+		cv_destroy(&array->strings[idx].string);
 	}
-	free(array->escapedwords);
-	free(array->hyphenpoints);
 	free(array->strings);
 }
 
@@ -120,7 +110,6 @@ void reflow_intstack_destroy(struct reflow_intstack* stack)
 	free(stack->data);
 }
 
-///////////////////////////////////
 typedef struct intpair
 {
 	int x, y;
@@ -206,8 +195,6 @@ void reflow_pairdeque_destroy(struct reflow_pairdeque* stack)
 {
 	free(stack->data);
 }
-
-//////////////////////////////////
 
 void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outword_b)
 {
@@ -347,9 +334,9 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	if(bIndentFirstWord)
 	{
 		cv_t spaced;
-		cv_init(&spaced, words.strings[0].length + 2);
-		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].data);
-		cv_swap(&spaced, &words.strings[0]);
+		cv_init(&spaced, words.strings[0].string.length + 2);
+		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].string.data);
+		cv_swap(&spaced, &words.strings[0].string);
 		cv_destroy(&spaced);
 	}
 
@@ -365,7 +352,7 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	for(idx = 0; idx < count; ++idx)
 	{
 		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
-				(words.escapedwords[idx] ? 0 : words.strings[idx].length));
+				(words.strings[idx].bEscaped ? 0 : words.strings[idx].string.length));
 	}
 
 	int* minima = (int*) malloc(sizeof(int) * (count+1));
@@ -381,7 +368,7 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	{
 		for(j = i + 1; j <= count; ++j)
 		{
-			thishyphenpoint = words.hyphenpoints[j];
+			thishyphenpoint = words.strings[j].bHyphenPoint;
 
 			if(j < count)
 			{
@@ -437,26 +424,27 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 
 		for(idx = i; idx < j; ++idx)
 		{
-			unsigned char spaceescapeflag = words.escapedwords[idx];
-			if(!words.hyphenpoints[idx])
+			reflow_word_t* pword = &words.strings[idx];
+			unsigned char spaceescapeflag = pword->bEscaped;
+			if(!pword->bHyphenPoint)
 			{
 				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
 				if(spaceescapeflag)
 				{
 					cv_sprintf(&wordbuf, "%*s%s%*s",
-						!!(spaceescapeflag & 2), "", words.strings[idx].data,
+						!!(spaceescapeflag & 2), "", pword->string.data,
 						!!(spaceescapeflag & 4), "");
-					cv_swap(&wordbuf, &words.strings[idx]);
+					cv_swap(&wordbuf, &pword->string);
 				}
-				else if(!words.escapedwords[idx + 1])
+				else if(!words.strings[idx + 1].bEscaped)
 				{
-					cv_strncat(&words.strings[idx], " ", 2);
+					cv_strncat(&pword->string, " ", 2);
 				}
 			}
 
-			cv_strncat(output, words.strings[idx].data, words.strings[idx].length);
+			cv_strncat(output, pword->string.data, pword->string.length);
 		}
-		if(words.hyphenpoints[idx - 1])
+		if(words.strings[idx - 1].bHyphenPoint)
 		{
 			cv_strncat(output, "-", 2);
 		}
@@ -474,7 +462,7 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	reflow_strarray_destroy(&words);
 }
 
-int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
+inline int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
 {
 	int w = j < count ? (offsets[j] - offsets[i] + j - i - 1) : width;
 
@@ -514,7 +502,6 @@ int hfn(int l, int k, const int* minima, const int* offsets, const int width, co
 
 void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
-	//Uses a shortest paths method to solve optimization problem
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 
@@ -523,9 +510,9 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	if(bIndentFirstWord)
 	{
 		cv_t spaced;
-		cv_init(&spaced, words.strings[0].length + 2);
-		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].data);
-		cv_swap(&spaced, &words.strings[0]);
+		cv_init(&spaced, words.strings[0].string.length + 2);
+		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].string.data);
+		cv_swap(&spaced, &words.strings[0].string);
 		cv_destroy(&spaced);
 	}
 
@@ -541,7 +528,7 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	for(idx = 0; idx < count; ++idx)
 	{
 		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
-				(words.escapedwords[idx] ? 0 : words.strings[idx].length));
+				(words.strings[idx].bEscaped ? 0 : words.strings[idx].string.length));
 	}
 
 	int* minima = (int*) malloc(sizeof(int) * (count + 1));
@@ -568,7 +555,7 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 		}
 		else
 		{
-			thishyphenpoint = words.hyphenpoints[j];
+			thishyphenpoint = words.strings[j].bHyphenPoint;
 			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
 			{
 				minima[j] = costfn(l, j, minima, offsets.data, width, count);
@@ -622,26 +609,27 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 
 		for(idx = i; idx < j; ++idx)
 		{
-			unsigned char spaceescapeflag = words.escapedwords[idx];
-			if(!words.hyphenpoints[idx])
+			reflow_word_t* pword = &words.strings[idx];
+			unsigned char spaceescapeflag = pword->bEscaped;
+			if(!pword->bHyphenPoint)
 			{
 				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
 				if(spaceescapeflag)
 				{
 					cv_sprintf(&wordbuf, "%*s%s%*s",
-						!!(spaceescapeflag & 2), "", words.strings[idx].data,
+						!!(spaceescapeflag & 2), "", pword->string.data,
 						!!(spaceescapeflag & 4), "");
-					cv_swap(&wordbuf, &words.strings[idx]);
+					cv_swap(&wordbuf, &pword->string);
 				}
-				else if(!words.escapedwords[idx + 1])
+				else if(!words.strings[idx + 1].bEscaped)
 				{
-					cv_strncat(&words.strings[idx], " ", 2);
+					cv_strncat(&pword->string, " ", 2);
 				}
 			}
 
-			cv_strncat(output, words.strings[idx].data, words.strings[idx].length);
+			cv_strncat(output, pword->string.data, pword->string.length);
 		}
-		if(words.hyphenpoints[idx - 1])
+		if(words.strings[idx - 1].bHyphenPoint)
 		{
 			cv_strncat(output, "-", 2);
 		}
@@ -651,7 +639,6 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	}
 	while(j);
 
-	reflow_pairdeque_destroy(&deque);
 	cv_destroy(&wordbuf);
 	reflow_intstack_destroy(&revbreak);
 	free(minima);

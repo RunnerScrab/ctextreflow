@@ -41,39 +41,18 @@ static inline void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
 		--stack->length;
 	}
 
-	//memset(&stack->data[stack->length], 0, sizeof(intpair_t)); //Not clearing makes pop less correct, but still works as used in this file
+//Not clearing memory makes pop less correct, but still works correctly as used
+//in this file and avoids repeated memsets in a tight loop
+//memset(&stack->data[stack->length], 0, sizeof(intpair_t));
 }
-
-/*
-  static void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
-  {
-  if(stack->length > 0)
-  {
-  --stack->length;
-  }
-
-  *out = stack->data[stack->length];
-  memset(&stack->data[stack->length], 0, sizeof(intpair_t));
-  }
-*/
 
 static inline void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
 {
-	//memset(stack->data, 0, sizeof(intpair_t) * stack->capacity); //Not clearing makes clear less correct, but still works as used in this file
+//Not clearing memory makes clear less correct, but still works as used in this
+//file and avoids repeated memsets in a tight loop
+//memset(stack->data, 0, sizeof(intpair_t) * stack->capacity);
 	stack->length = 0;
 }
-
-/*
-  static void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
-  {
-  if(stack->length > 0)
-  {
-  --stack->length;
-  }
-  *out = stack->data[0];
-  memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
-  }
-*/
 
 static inline int reflow_pairdeque_peek_x(struct reflow_pairdeque* stack)
 {
@@ -341,6 +320,67 @@ static void FindParagraphs(const char* text, size_t length, struct reflow_intsta
 	while(found);
 }
 
+static void PerformReflow(const reflow_strarray_t* words, const int* breaks, cv_t* output)
+{
+	size_t count = words->length, idx = 0;
+	int i = 0, j = count;
+	reflow_intstack_t revbreak;
+	reflow_intstack_create(&revbreak, count);
+
+	reflow_intstack_push(&revbreak, count);
+	while(j > 0)
+	{
+		i = breaks[j];
+		reflow_intstack_push(&revbreak, i);
+		j = i;
+	}
+	i = reflow_intstack_pop(&revbreak);
+
+	reflow_word_t* pword = 0;
+	unsigned char spaceescapeflag = 0;
+	cv_t wordbuf;
+	cv_init(&wordbuf, 64);
+	do
+	{
+		j = reflow_intstack_pop(&revbreak);
+
+		for(idx = i; idx < j; ++idx)
+		{
+			pword = &words->strings[idx];
+			spaceescapeflag = pword->bEscaped;
+			if(!pword->bHyphenPoint)
+			{
+				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
+				if(spaceescapeflag)
+				{
+					cv_sprintf(&wordbuf, "%*s%s%*s",
+						!!(spaceescapeflag & 2), "", pword->string.data,
+						!!(spaceescapeflag & 4), "");
+					cv_swap(&wordbuf, &pword->string);
+				}
+				else if(!words->strings[idx + 1].bEscaped)
+				{
+					cv_strncat(&pword->string, " ", 2);
+				}
+			}
+
+			cv_strncat(output, pword->string.data, pword->string.length);
+		}
+		if(words->strings[idx - 1].bHyphenPoint)
+		{
+			cv_strncat(output, "-", 2);
+		}
+		cv_strncat(output, "\n", 2);
+
+		i = j;
+	}
+	while(j);
+
+
+	cv_destroy(&wordbuf);
+	reflow_intstack_destroy(&revbreak);
+}
+
 static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	//Uses a shortest paths method to solve optimization problem
@@ -422,65 +462,15 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 		}
 	}
 
-	reflow_intstack_t revbreak;
-	reflow_intstack_create(&revbreak, count);
-	j = count;
-	reflow_intstack_push(&revbreak, count);
-	while(j > 0)
-	{
-		i = breaks[j];
-		reflow_intstack_push(&revbreak, i);
-		j = i;
-	}
-	i = reflow_intstack_pop(&revbreak);
+	PerformReflow(&words, breaks, output);
 
-	cv_t wordbuf;
-	cv_init(&wordbuf, 64);
-	do
-	{
-		j = reflow_intstack_pop(&revbreak);
-
-		for(idx = i; idx < j; ++idx)
-		{
-			reflow_word_t* pword = &words.strings[idx];
-			unsigned char spaceescapeflag = pword->bEscaped;
-			if(!pword->bHyphenPoint)
-			{
-				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
-				if(spaceescapeflag)
-				{
-					cv_sprintf(&wordbuf, "%*s%s%*s",
-						!!(spaceescapeflag & 2), "", pword->string.data,
-						!!(spaceescapeflag & 4), "");
-					cv_swap(&wordbuf, &pword->string);
-				}
-				else if(!words.strings[idx + 1].bEscaped)
-				{
-					cv_strncat(&pword->string, " ", 2);
-				}
-			}
-
-			cv_strncat(output, pword->string.data, pword->string.length);
-		}
-		if(words.strings[idx - 1].bHyphenPoint)
-		{
-			cv_strncat(output, "-", 2);
-		}
-		cv_strncat(output, "\n", 2);
-
-		i = j;
-	}
-	while(j);
-
-	cv_destroy(&wordbuf);
-	reflow_intstack_destroy(&revbreak);
+	reflow_intstack_destroy(&offsets);
 	free(minima);
 	free(breaks);
-	reflow_intstack_destroy(&offsets);
 	reflow_strarray_destroy(&words);
 }
 
-static inline int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
+static int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
 {
 	int w = j < count ? (offsets[j] - offsets[i] + j - i - 1) : width;
 
@@ -538,6 +528,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 	size_t count = words.length;
 
 	struct reflow_intstack offsets;
+
 	reflow_intstack_create(&offsets, count + 1);
 	reflow_intstack_push(&offsets, 0);
 
@@ -556,17 +547,19 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 	memset(minima, 0, sizeof(int) * (count + 1));
 
 	struct reflow_pairdeque deque;
-	reflow_pairdeque_create(&deque, 32);
+	reflow_pairdeque_create(&deque, count + 1);
 	reflow_pairdeque_push(&deque, 1, 0);
 
-	int j = 1, l = 0, peekx = 0, peeky = 0;
+	int j = 1, l = 0, peekx = 0, peeky = 0, mincost = 0;
 	unsigned char thishyphenpoint = 0;
 	for(; j <= count; ++j)
 	{
 		l = deque.data[0].x;
-		if(costfn(j - 1, j, minima, offsets.data, width, count) < costfn(l, j, minima, offsets.data, width, count))
+		mincost = costfn(j - 1, j, minima, offsets.data, width, count);
+		if( mincost <
+			costfn(l, j, minima, offsets.data, width, count))
 		{
-			minima[j] = costfn(j - 1, j, minima, offsets.data, width, count);
+			minima[j] = mincost;
 			breaks[j] = j - 1;
 			reflow_pairdeque_clear(&deque);
 			reflow_pairdeque_push(&deque, j - 1, j + 1);
@@ -594,7 +587,8 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 				reflow_pairdeque_popnoret(&deque);
 			}
 
-			reflow_pairdeque_push(&deque, j - 1, hfn(j - 1, reflow_pairdeque_peek_x(&deque), minima, offsets.data, width, count));
+			reflow_pairdeque_push(&deque, j - 1,
+					hfn(j - 1, reflow_pairdeque_peek_x(&deque), minima, offsets.data, width, count));
 			if((j + 1) == deque.data[1].y)
 			{
 				reflow_pairdeque_popnoret(&deque);
@@ -606,62 +600,9 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 		}
 	}
 
-
-
-	int i = 0;
-	reflow_intstack_t revbreak;
-	reflow_intstack_create(&revbreak, count);
-	j = count;
-	reflow_intstack_push(&revbreak, count);
-	while(j > 0)
-	{
-		i = breaks[j];
-		reflow_intstack_push(&revbreak, i);
-		j = i;
-	}
-	i = reflow_intstack_pop(&revbreak);
-
-	cv_t wordbuf;
-	cv_init(&wordbuf, 64);
-	do
-	{
-		j = reflow_intstack_pop(&revbreak);
-
-		for(idx = i; idx < j; ++idx)
-		{
-			reflow_word_t* pword = &words.strings[idx];
-			unsigned char spaceescapeflag = pword->bEscaped;
-			if(!pword->bHyphenPoint)
-			{
-				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
-				if(spaceescapeflag)
-				{
-					cv_sprintf(&wordbuf, "%*s%s%*s",
-						!!(spaceescapeflag & 2), "", pword->string.data,
-						!!(spaceescapeflag & 4), "");
-					cv_swap(&wordbuf, &pword->string);
-				}
-				else if(!words.strings[idx + 1].bEscaped)
-				{
-					cv_strncat(&pword->string, " ", 2);
-				}
-			}
-
-			cv_strncat(output, pword->string.data, pword->string.length);
-		}
-		if(words.strings[idx - 1].bHyphenPoint)
-		{
-			cv_strncat(output, "-", 2);
-		}
-		cv_strncat(output, "\n", 2);
-
-		i = j;
-	}
-	while(j);
+	PerformReflow(&words, breaks, output);
 
 	reflow_pairdeque_destroy(&deque);
-	cv_destroy(&wordbuf);
-	reflow_intstack_destroy(&revbreak);
 	free(minima);
 	free(breaks);
 	reflow_intstack_destroy(&offsets);
@@ -673,26 +614,32 @@ static void StripNewline(const char* input, size_t inputlen, char* out, size_t b
 	//Preserves blank lines
 	const char* pos = input;
 	const char* found = 0;
+	const char* p = 0;
 	size_t spaceleft = bufferlen - 1;
+	size_t offset = 0;
 	do
 	{
 		found = strchr(pos, '\n');
-		size_t offset = found - pos;
+		offset = found - pos;
 		if(found && (offset <= spaceleft))
 		{
-			const char* p = found + 1;
+			p = found + 1;
 			if(*p && '\n' == *p)
 			{
-				for(;*(p) && '\n' == *p; ++p);
+
+				for(;*p && '\n' == *p; ++p);
 				found = p - 1;
-				offset = min(spaceleft, ((found) - pos) + 1);
+				offset = min(spaceleft, ((found - pos) + 1));
+				//offset = min(spaceleft, (&p[min((strspn(p, "\n") - 1), (bufferlen - 1))] - pos + 1));
 				strncat(out, pos, offset);
 			}
 			else
 			{
 				strncat(out, pos, offset);
+				out[found - input] = ' ';
 			}
-			spaceleft -= offset;
+
+			spaceleft -= offset + 1;
 			pos = found + 1;
 		}
 		else if(found)

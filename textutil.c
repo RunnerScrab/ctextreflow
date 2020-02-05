@@ -73,6 +73,24 @@ int reflow_intstack_pop(struct reflow_intstack* stack)
 	return retval;
 }
 
+void reflow_intstack_clear(struct reflow_intstack* stack)
+{
+	memset(stack->data, 0, sizeof(int) * stack->capacity);
+	stack->length = 0;
+}
+
+int reflow_intstack_popleft(struct reflow_intstack* stack)
+{
+	//This method actually makes this a deque
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+	int retval = stack->data[0];
+	memmove(stack->data, &stack->data[1], sizeof(int) * stack->length);
+	return retval;
+}
+
 int reflow_intstack_peek(struct reflow_intstack* stack)
 {
 	return stack->data[stack->length - 1];
@@ -251,7 +269,7 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	for(idx = 0; idx < count; ++idx)
 	{
 		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
-			(words.escapedwords[idx] ? 0 : words.strings[idx].length));
+				(words.escapedwords[idx] ? 0 : words.strings[idx].length));
 	}
 
 	int* minima = (int*) malloc(sizeof(int) * (count+1));
@@ -291,12 +309,15 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 			{
 				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
 				{
-					wsincelasthyphen = 0;
+					if(thishyphenpoint)
+						wsincelasthyphen = 0;
+					else
+					        wsincelasthyphen += width;
 					minima[j] = cost;
 					breaks[j] = i;
 				}
 			}
-			wsincelasthyphen += width;
+
 		}
 	}
 
@@ -356,6 +377,196 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	reflow_intstack_destroy(&offsets);
 	reflow_strarray_destroy(&words);
 }
+
+int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
+{
+	int w = j < count ? (offsets[j] - offsets[i] + j - i - 1) : width;
+
+	if(w > width)
+	{
+		return  10000 * (w - width);
+	}
+	return minima[i] + (width - w) * (width - w);
+
+}
+
+int hfn(int l, int k, const int* minima, const int* offsets, const int width, const int count)
+{
+	int low = l + 1;
+	int high = count;
+	int mid = 0;
+	while(low < high)
+	{
+		mid = (low + high)/2;
+		if(costfn(l, mid, minima, offsets, width, count) <=
+			costfn(k, mid, minima, offsets, width, count))
+		{
+			high = mid;
+		}
+		else
+		{
+			low = mid + 1;
+		}
+	}
+	if(costfn(l, high, minima, offsets, width, count) <=
+		costfn(k, high, minima, offsets, width, count))
+	{
+		return high;
+	}
+	return l + 2;
+}
+
+void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+{
+	//Uses a shortest paths method to solve optimization problem
+	reflow_strarray_t words;
+	reflow_strarray_create(&words, 64);
+
+	TokenizeString((char*) text, len, &words);
+
+	if(bIndentFirstWord)
+	{
+		cv_t spaced;
+		cv_init(&spaced, words.strings[0].length + 2);
+		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].data);
+		cv_swap(&spaced, &words.strings[0]);
+		cv_destroy(&spaced);
+	}
+
+	size_t idx = 0;
+	size_t count = words.length;
+
+	struct reflow_intstack offsets;
+	reflow_intstack_create(&offsets, count + 1);
+	reflow_intstack_push(&offsets, 0);
+
+	//Calculate word costs. Words which do not represent a control sequence have a
+	//cost simply equal to their length.
+	for(idx = 0; idx < count; ++idx)
+	{
+		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
+				(words.escapedwords[idx] ? 0 : words.strings[idx].length));
+	}
+
+	int* minima = (int*) malloc(sizeof(int) * (count + 1));
+	int* breaks = (int*) malloc(sizeof(int) * (count + 1));
+	int wsincelasthyphen = 0;
+	memset(breaks, 0, sizeof(int) * (count + 1));
+	memset(minima, 0, sizeof(int) * (count + 1));
+
+
+	struct reflow_intstack dequex, dequey;
+	reflow_intstack_create(&dequex, 32);
+	reflow_intstack_create(&dequey, 32);
+	reflow_intstack_push(&dequex, 1);
+	reflow_intstack_push(&dequey, 0);
+
+
+	int j = 1;
+	for(; j <= count; ++j)
+	{
+		int l = dequex.data[0];
+		if(costfn(j - 1, j, minima, offsets.data, width, count) < costfn(l, j, minima, offsets.data, width, count))
+		{
+			minima[j] = costfn(j - 1, j, minima, offsets.data, width, count);
+			breaks[j] = j - 1;
+			reflow_intstack_clear(&dequex);
+			reflow_intstack_clear(&dequey);
+			reflow_intstack_push(&dequex, j - 1);
+			reflow_intstack_push(&dequey, j + 1);
+		}
+		else
+		{
+			unsigned char thishyphenpoint = words.hyphenpoints[j];
+			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
+			{
+				minima[j] = costfn(l, j, minima, offsets.data, width, count);
+				breaks[j] = l;
+				if(thishyphenpoint)
+					wsincelasthyphen = 0;
+				else
+					wsincelasthyphen += width;
+			}
+			while(costfn(j - 1, reflow_intstack_peek(&dequey), minima, offsets.data, width, count) <=
+				costfn(reflow_intstack_peek(&dequex), reflow_intstack_peek(&dequey), minima, offsets.data, width, count))
+			{
+				reflow_intstack_pop(&dequex);
+				reflow_intstack_pop(&dequey);
+			}
+			reflow_intstack_push(&dequex, j - 1);
+			reflow_intstack_push(&dequey, hfn(j - 1, reflow_intstack_peek(&dequex), minima, offsets.data, width, count));
+			if((j + 1) == dequey.data[1])
+			{
+				reflow_intstack_popleft(&dequex);
+				reflow_intstack_popleft(&dequey);
+			}
+			else
+			{
+				++dequey.data[0];
+			}
+		}
+	}
+
+	int i = 0;
+	reflow_intstack_t revbreak;
+	reflow_intstack_create(&revbreak, count);
+	j = count;
+	reflow_intstack_push(&revbreak, count);
+	while(j > 0)
+	{
+		i = breaks[j];
+		reflow_intstack_push(&revbreak, i);
+		j = i;
+	}
+	i = reflow_intstack_pop(&revbreak);
+
+	cv_t wordbuf;
+	cv_init(&wordbuf, 64);
+	do
+	{
+		j = reflow_intstack_pop(&revbreak);
+
+		for(idx = i; idx < j; ++idx)
+		{
+			unsigned char spaceescapeflag = words.escapedwords[idx];
+			if(!words.hyphenpoints[idx])
+			{
+				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
+				if(spaceescapeflag)
+				{
+					cv_sprintf(&wordbuf, "%*s%s%*s",
+						!!(spaceescapeflag & 2), "", words.strings[idx].data,
+						!!(spaceescapeflag & 4), "");
+					cv_swap(&wordbuf, &words.strings[idx]);
+				}
+				else if(!words.escapedwords[idx + 1])
+				{
+					cv_strncat(&words.strings[idx], " ", 2);
+				}
+			}
+
+			cv_strncat(output, words.strings[idx].data, words.strings[idx].length);
+		}
+		if(words.hyphenpoints[idx - 1])
+		{
+			cv_strncat(output, "-", 2);
+		}
+		cv_strncat(output, "\n", 2);
+
+		i = j;
+	}
+	while(j);
+
+	reflow_intstack_destroy(&dequex);
+	reflow_intstack_destroy(&dequey);
+	cv_destroy(&wordbuf);
+	reflow_intstack_destroy(&revbreak);
+	free(minima);
+	free(breaks);
+	reflow_intstack_destroy(&offsets);
+	reflow_strarray_destroy(&words);
+}
+
 
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen)
 {

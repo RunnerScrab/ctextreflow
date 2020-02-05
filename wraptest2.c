@@ -8,7 +8,7 @@
 
 const char* teststr = "Each iteration of the dynamic `red`programming scheme`default` can also be seen as filling in a matrix, where a cell adds up the least overall cost to a subproblem (a column minimum) and a penalty. A concave weight function implies that the matrix is totally monotone and in 1987 Shor, Moran, Aggarwal, Wilber and Klawe devised an algorithm which finds the row maxima of such matrix in linear time.\n\nEven though SMAWK can be modified to find column minima instead, it is not possible to apply it directly to this \"on-line\" matrix as it might try to evaluate a not \"available\" cell, i.e. a cell dependent on some yet unknown column minimum. However, Wilber came up with an algorithm in 1988 which \"pretends\" to know the minima and still runs in O(n) time. An \"ordered\" algorithm which obeys the availability of the matrix as presented by Aggarwal and Tokuyama in 1998 follows.`default`";
 
-void ReflowText(const char* input, size_t len, cv_t* output)
+void ReflowText(const char* input, size_t len, cv_t* output, unsigned char bBinary)
 {
 	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
 	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
@@ -29,7 +29,15 @@ void ReflowText(const char* input, size_t len, cv_t* output)
 		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
 
 		cv_clear(&buffer);
-		ReflowParagraph(&nlstrippedbuf[start], end - start + 1, 80, &buffer, 2);
+		switch(bBinary)
+		{
+		case 1:
+			ReflowParagraphBinary(&nlstrippedbuf[start], end - start + 1, 80, &buffer, 2);
+			break;
+		case 0:
+			ReflowParagraph(&nlstrippedbuf[start], end - start + 1, 80, &buffer, 2);
+			break;
+		}
 		cv_strcat(output, buffer.data);
 	}
 
@@ -40,6 +48,7 @@ void ReflowText(const char* input, size_t len, cv_t* output)
 
 int main(void)
 {
+
 	cv_t reflowed;
 	cv_init(&reflowed, strlen(teststr) + 1);
 	ReflowText(teststr, strlen(teststr), &reflowed);

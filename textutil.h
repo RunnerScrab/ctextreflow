@@ -25,7 +25,9 @@ typedef struct reflow_intstack
 
 void reflow_intstack_create(struct reflow_intstack* stack, size_t initial);
 int reflow_intstack_pop(struct reflow_intstack* stack);
+int reflow_intstack_popleft(struct reflow_intstack* stack);
 int reflow_intstack_peek(struct reflow_intstack* stack);
+void reflow_intstack_clear(struct reflow_intstack* stack);
 void reflow_intstack_push(struct reflow_intstack* stack, int val);
 void reflow_intstack_destroy(struct reflow_intstack* stack);
 

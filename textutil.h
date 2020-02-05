@@ -9,10 +9,11 @@ typedef struct strarray
 	size_t length;
 	size_t capacity;
 	unsigned char* hyphenpoints;
+	unsigned char* escapedwords;
 } strarray_t;
 
 int strarray_create(struct strarray* array, size_t initial_size);
-void strarray_push(struct strarray* array, char* val, unsigned char b);
+void strarray_push(struct strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
 void strarray_destroy(struct strarray* array);
 
 typedef struct intstack
@@ -28,6 +29,7 @@ int intstack_peek(struct intstack* stack);
 void intstack_push(struct intstack* stack, int val);
 void intstack_destroy(struct intstack* stack);
 
+void FindParagraphs(const char* text, size_t length, struct intstack* paragraphlocs);
 void TokenizeString(const char* input, size_t inputlen, strarray_t* out);
 void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char);
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);

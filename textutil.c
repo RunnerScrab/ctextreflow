@@ -16,20 +16,25 @@ int strarray_create(struct strarray* array, size_t initial_size)
 	array->capacity = initial_size;
 	array->strings = (cv_t*) malloc(sizeof(cv_t) * initial_size);
 	array->hyphenpoints = (unsigned char*) malloc(sizeof(unsigned char) * initial_size);
+	array->escapedwords = (unsigned char*) malloc(sizeof(unsigned char) * initial_size);
 	return array->strings ? 0 : -1;
 }
 
-void strarray_push(struct strarray* array, char* val, unsigned char bIsHyphenPoint)
+void strarray_push(struct strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
 {
 	if(array->length >= array->capacity)
 	{
 		array->capacity = max((array->capacity<<1), (array->capacity + array->length));
 		array->strings = (cv_t*) realloc(array->strings, sizeof(cv_t) * array->capacity);
 		array->hyphenpoints = (unsigned char*) realloc(array->hyphenpoints, sizeof(unsigned char) * array->capacity);
-		memset(&array->strings[array->length], 0, sizeof(cv_t) * (array->capacity - array->length));
-		memset(&array->hyphenpoints[array->length], 0, sizeof(unsigned char) * (array->capacity - array->length));
+		array->escapedwords = (unsigned char*) realloc(array->escapedwords, sizeof(unsigned char) * array->capacity);
+		size_t lendiff = array->capacity - array->length;
+		memset(&array->strings[array->length], 0, sizeof(cv_t) * lendiff);
+		memset(&array->hyphenpoints[array->length], 0, sizeof(unsigned char) * lendiff);
+		memset(&array->escapedwords[array->length], 0, sizeof(unsigned char) * lendiff);
 	}
 	array->hyphenpoints[array->length] = bIsHyphenPoint;
+	array->escapedwords[array->length] = bIsEscaped;
 	cv_init(&array->strings[array->length], 16);
 	cv_appendstr(&(array->strings[array->length]), val);
 
@@ -43,6 +48,7 @@ void strarray_destroy(struct strarray* array)
 	{
 		cv_destroy(&array->strings[idx]);
 	}
+	free(array->escapedwords);
 	free(array->hyphenpoints);
 	free(array->strings);
 }
@@ -100,7 +106,7 @@ void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outw
 
 unsigned int CanWordBeSplit(const char* word, size_t len)
 {
-	if(len < 8 || isupper(word[0]) || word[0] == '"')
+	if(len < 8 || isupper(word[0]) || word[0] == '"' || (word[0] == '`' && word[len - 1] == '`'))
 		return 0;
 	else
 		return 1;
@@ -110,12 +116,14 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 {
 	char* savep = 0;
 	char* ret = 0;
-	char* inputcopy = (char*) malloc(sizeof(char) * len + 1);
-	memcpy(inputcopy, input, sizeof(char) * (len + 1));
-
+	char* inputcopy = (char*) malloc(sizeof(char) * (len +1));
+	memcpy(inputcopy, input, sizeof(char) * (len));
+	inputcopy[len] = 0;
+	size_t offset = 0, lastescapetoken = 0;
 	do
 	{
-		ret = strtok_r(ret ? 0 : inputcopy, " ", &savep);
+		ret = strtok_r(ret ? 0 : inputcopy, " `", &savep);
+
 
 		if(ret && ret >= &inputcopy[len - 1])
 		{
@@ -124,21 +132,47 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 		}
 		else if(ret)
 		{
+			offset = ret - inputcopy;
 			size_t wordlen = strlen(ret);
-			if(CanWordBeSplit(ret, wordlen))
+			if(offset > 0 && input[offset - 1] == '`' && lastescapetoken != offset - 1 &&
+				(offset + wordlen) < len && input[offset + wordlen] == '`')
+
+			{
+				//Special handling of escaped words. Escaped words are not displayed, though
+				//they perform control functions (enabling color, bold, italics, etc.).
+				//Here we store metadata for them for the reflow algorithm to later use when
+				//placing words down.
+				cv_t rebuilttoken;
+				cv_init(&rebuilttoken, wordlen + 3);
+				cv_sprintf(&rebuilttoken, "`%s`", ret);
+
+				unsigned char spacealignment = 1;
+				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
+				if((offset - 2) > 0 && isspace(input[offset - 2]))
+					spacealignment |= 2;
+				if((offset + wordlen + 1) < len &&
+					isspace(input[offset + wordlen + 1]))
+					spacealignment |= 4;
+
+				strarray_push(out, rebuilttoken.data, spacealignment, 0);
+				cv_destroy(&rebuilttoken);
+				lastescapetoken =  offset + wordlen;
+			}
+			else if(CanWordBeSplit(ret, wordlen))
 			{
 				cv_t a, b;
 				cv_init(&a, wordlen);
 				cv_init(&b, wordlen);
 				SplitWord(ret, wordlen, &a, &b);
-				strarray_push(out, a.data, 1);
-				strarray_push(out, b.data, 0);
+				//By default, the word's cost is its length.
+				strarray_push(out, a.data, 0, 1);
+				strarray_push(out, b.data, 0, 0);
 				cv_destroy(&a);
 				cv_destroy(&b);
 			}
 			else
 			{
-				strarray_push(out, ret, 0);
+				strarray_push(out, ret, 0, 0);
 			}
 		}
 	}
@@ -186,6 +220,8 @@ void FindParagraphs(const char* text, size_t length, struct intstack* paragraphl
 	while(found);
 }
 
+
+
 void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	//Uses a shortest paths method to solve optimization problem
@@ -210,11 +246,13 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 	intstack_create(&offsets, count + 1);
 	intstack_push(&offsets, 0);
 
+	//Calculate word costs. Words which do not represent a control sequence have a
+	//cost simply equal to their length.
 	for(idx = 0; idx < count; ++idx)
 	{
-		intstack_push(&offsets, intstack_peek(&offsets) + words.strings[idx].length);
+		intstack_push(&offsets, intstack_peek(&offsets) +
+			(words.escapedwords[idx] ? 0 : words.strings[idx].length));
 	}
-	printf("Last offset: %d\nFile length: %d\n", intstack_peek(&offsets), len);
 
 	int* minima = (int*) malloc(sizeof(int) * (count+1));
 	int* breaks = (int*) malloc(sizeof(int) * (count + 1));
@@ -274,16 +312,31 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 	}
 	i = intstack_pop(&revbreak);
 
+	cv_t wordbuf;
+	cv_init(&wordbuf, 64);
 	do
 	{
 		j = intstack_pop(&revbreak);
 
 		for(idx = i; idx < j; ++idx)
 		{
+			unsigned char spaceescapeflag = words.escapedwords[idx];
 			if(!words.hyphenpoints[idx])
 			{
-				cv_strncat(&words.strings[idx], " ", 2);
+				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
+				if(spaceescapeflag)
+				{
+					cv_sprintf(&wordbuf, "%*s%s%*s",
+						!!(spaceescapeflag & 2), "", words.strings[idx].data,
+						!!(spaceescapeflag & 4), "");
+					cv_swap(&wordbuf, &words.strings[idx]);
+				}
+				else if(!words.escapedwords[idx + 1])
+				{
+					cv_strncat(&words.strings[idx], " ", 2);
+				}
 			}
+
 			cv_strncat(output, words.strings[idx].data, words.strings[idx].length);
 		}
 		if(words.hyphenpoints[idx - 1])
@@ -296,6 +349,7 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 	}
 	while(j);
 
+	cv_destroy(&wordbuf);
 	intstack_destroy(&revbreak);
 	free(minima);
 	free(breaks);

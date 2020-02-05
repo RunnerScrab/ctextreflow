@@ -10,7 +10,7 @@
 
 const char* teststr = "Each iteration of the dynamic `red`programming scheme`default` can also be seen as filling in a matrix, where a cell adds up the least overall cost to a subproblem (a column minimum) and a penalty. A concave weight function implies that the matrix is totally monotone and in 1987 Shor, Moran, Aggarwal, Wilber and Klawe devised an algorithm which finds the row maxima of such matrix in linear time.\n\nEven though SMAWK can be modified to find column minima instead, it is not possible to apply it directly to this \"on-line\" matrix as it might try to evaluate a not \"available\" cell, i.e. a cell dependent on some yet unknown column minimum. However, Wilber came up with an algorithm in 1988 which \"pretends\" to know the minima and still runs in O(n) time. An \"ordered\" algorithm which obeys the availability of the matrix as presented by Aggarwal and Tokuyama in 1998 follows.`default`\n\nShe is asleep: good wench, let's sit down quiet,\nFor fear we wake her: softly, gentle Patience.\n\nThe vision. Enter, solemnly tripping one after another, six personages, clad in white robes, wearing on their heads garlands of bays, and golden vizards on their faces; branches of bays or palm in their hands. They first congee unto her, then dance; and, at certain changes, the first two hold a spare garland over her head; at which the other four make reverent curtsies; then the two that held the garland deliver the same to the other next two, who observe the same order in their changes, and holding the garland over her head: which done, they deliver the same garland to the last two, who likewise observe the same order: at which, as it were by inspiration, she makes in her sleep signs of rejoicing, and holdeth up her hands to heaven: and so in their dancing vanish, carrying the garland with them. The music continues.";
 
-void ReflowText(const char* input, size_t len, cv_t* output, unsigned char bIndentParagraphs, unsigned char bBinary)
+void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
 {
 	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
 	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
@@ -31,15 +31,41 @@ void ReflowText(const char* input, size_t len, cv_t* output, unsigned char bInde
 		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
 
 		cv_clear(&buffer);
-		switch(bBinary)
-		{
-		case 1:
-			ReflowParagraphBinary(&nlstrippedbuf[start], end - start + 1, 80, &buffer, 2);
-			break;
-		case 0:
-			ReflowParagraph(&nlstrippedbuf[start], end - start + 1, 80, &buffer, 2);
-			break;
-		}
+
+		ReflowParagraphBinary(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+
+		cv_strcat(output, buffer.data);
+	}
+
+	reflow_intstack_destroy(&paragraphbounds);
+	cv_destroy(&buffer);
+	free(nlstrippedbuf);
+}
+
+void ReflowText(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+{
+	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
+	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
+	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
+
+	reflow_intstack_t paragraphbounds;
+	reflow_intstack_create(&paragraphbounds, 8);
+
+	cv_t buffer;
+	cv_init(&buffer, len);
+
+	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
+
+	size_t idx = 0;
+	for(; idx < paragraphbounds.length; idx += 2)
+	{
+		int start = paragraphbounds.data[idx];
+		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
+
+		cv_clear(&buffer);
+
+		ReflowParagraph(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+
 		cv_strcat(output, buffer.data);
 	}
 
@@ -69,7 +95,7 @@ int main(int argc, char** argv)
 	for(idx = 0; idx < TESTS; ++idx)
 	{
 		cv_clear(&reflowed);
-		ReflowText(teststr, strlen(teststr), &reflowed, 0, 1);
+		ReflowText(teststr, strlen(teststr), &reflowed, 80, 0);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &timeend);
 	printf("%s", reflowed.data);
@@ -80,7 +106,7 @@ int main(int argc, char** argv)
 	for(idx = 0; idx < TESTS; ++idx)
 	{
 		cv_clear(&reflowed);
-		ReflowText(teststr, strlen(teststr), &reflowed, 0, 0);
+		ReflowTextBinary(teststr, strlen(teststr), &reflowed, 80, 0);
 	}
 	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &timeend);
 	printf("%s", reflowed.data);

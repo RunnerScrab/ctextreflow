@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Og -g
-LDFLAGS = -g
+CFLAGS = -Wall -Ofast
+LDFLAGS = -Ofast
 
 wraptest2: wraptest2.o charvector.o talloc.o textutil.o
 

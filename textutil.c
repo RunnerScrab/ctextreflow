@@ -10,7 +10,136 @@
 #define max(a, b) (a > b ? a : b)
 #define min(a, b) (a < b ? a : b)
 
-int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
+//This file is going to be pretty big, because the algorithms here use one-off
+//ADTs which are likely not going to be reused because they contain specific
+//types. In C, we don't have templates/generics and must hand write every
+//specialization.
+
+typedef struct intpair
+{
+	int x, y;
+} intpair_t;
+
+typedef struct reflow_pairdeque
+{
+	intpair_t* data;
+	size_t length, capacity;
+} reflow_pairdeque_t;
+
+static void reflow_pairdeque_create(struct reflow_pairdeque* stack, size_t initial)
+{
+	stack->data = (intpair_t*) malloc(sizeof(intpair_t) * initial);
+	memset(stack->data, 0, sizeof(intpair_t) * initial);
+	stack->capacity = initial;
+	stack->length = 0;
+}
+
+static void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
+{
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+
+	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+}
+
+/*
+static void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
+{
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+
+	*out = stack->data[stack->length];
+	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+}
+*/
+
+static void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
+{
+	memset(stack->data, 0, sizeof(intpair_t) * stack->capacity);
+	stack->length = 0;
+}
+
+/*
+static void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
+{
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+	*out = stack->data[0];
+	memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
+}
+*/
+
+static inline int reflow_pairdeque_peek_x(struct reflow_pairdeque* stack)
+{
+	return stack->data[stack->length - 1].x;
+}
+
+static inline int reflow_pairdeque_peek_y(struct reflow_pairdeque* stack)
+{
+	return stack->data[stack->length - 1].y;
+}
+
+
+static void reflow_pairdeque_push(struct reflow_pairdeque* stack, int x, int y)
+{
+	if(stack->length >= stack->capacity)
+	{
+		stack->capacity <<= 1; //We can only push one value at a time through this function
+		stack->data = (intpair_t*) realloc(stack->data, sizeof(intpair_t) * stack->capacity);
+	}
+
+	stack->data[stack->length].x = x;
+	stack->data[stack->length].y = y;
+	++stack->length;
+}
+
+static void reflow_pairdeque_destroy(struct reflow_pairdeque* stack)
+{
+	free(stack->data);
+}
+
+typedef struct reflow_word
+{
+	cv_t string;
+	unsigned char bHyphenPoint;
+	unsigned char bEscaped;
+} reflow_word_t;
+
+typedef struct reflow_strarray
+{
+	reflow_word_t* strings;
+	size_t length;
+	size_t capacity;
+} reflow_strarray_t;
+
+static int reflow_strarray_create(reflow_strarray_t* array, size_t initial_size);
+static void reflow_strarray_push(reflow_strarray_t* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
+static void reflow_strarray_destroy(reflow_strarray_t* array);
+
+typedef struct reflow_intstack
+{
+	int* data;
+	size_t length;
+	size_t capacity;
+} reflow_intstack_t;
+
+static void reflow_intstack_create(struct reflow_intstack* stack, size_t initial);
+static int reflow_intstack_pop(struct reflow_intstack* stack);
+static int reflow_intstack_peek(struct reflow_intstack* stack);
+static void reflow_intstack_push(struct reflow_intstack* stack, int val);
+static void reflow_intstack_destroy(struct reflow_intstack* stack);
+
+static void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs);
+static void TokenizeString(const char* input, size_t inputlen, reflow_strarray_t* out);
+static void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);
+
+static int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 {
 	array->length = 0;
 	array->capacity = initial_size;
@@ -22,7 +151,7 @@ int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 	return array->strings ? 0 : -1;
 }
 
-void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
+static void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
 {
 	if(array->length >= array->capacity)
 	{
@@ -40,7 +169,7 @@ void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned cha
 	++array->length;
 }
 
-void reflow_strarray_destroy(struct reflow_strarray* array)
+static void reflow_strarray_destroy(struct reflow_strarray* array)
 {
 	size_t idx = 0;
 	for(; idx < array->length; ++idx)
@@ -50,14 +179,14 @@ void reflow_strarray_destroy(struct reflow_strarray* array)
 	free(array->strings);
 }
 
-void reflow_intstack_create(struct reflow_intstack* stack, size_t initial)
+static void reflow_intstack_create(struct reflow_intstack* stack, size_t initial)
 {
 	stack->data = (int*) malloc(sizeof(int) * initial);
 	stack->capacity = initial;
 	stack->length = 0;
 }
 
-int reflow_intstack_pop(struct reflow_intstack* stack)
+static int reflow_intstack_pop(struct reflow_intstack* stack)
 {
 	if(stack->length > 0)
 	{
@@ -70,30 +199,12 @@ int reflow_intstack_pop(struct reflow_intstack* stack)
 	return retval;
 }
 
-void reflow_intstack_clear(struct reflow_intstack* stack)
-{
-	memset(stack->data, 0, sizeof(int) * stack->capacity);
-	stack->length = 0;
-}
-
-int reflow_intstack_popleft(struct reflow_intstack* stack)
-{
-	//This method actually makes this a deque
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
-	int retval = stack->data[0];
-	memmove(stack->data, &stack->data[1], sizeof(int) * stack->length);
-	return retval;
-}
-
-int reflow_intstack_peek(struct reflow_intstack* stack)
+static int reflow_intstack_peek(struct reflow_intstack* stack)
 {
 	return stack->data[stack->length - 1];
 }
 
-void reflow_intstack_push(struct reflow_intstack* stack, int val)
+static void reflow_intstack_push(struct reflow_intstack* stack, int val)
 {
 	if(stack->length >= stack->capacity)
 	{
@@ -105,98 +216,13 @@ void reflow_intstack_push(struct reflow_intstack* stack, int val)
 	++stack->length;
 }
 
-void reflow_intstack_destroy(struct reflow_intstack* stack)
+static void reflow_intstack_destroy(struct reflow_intstack* stack)
 {
 	free(stack->data);
 }
 
-typedef struct intpair
-{
-	int x, y;
-} intpair_t;
 
-typedef struct reflow_pairdeque
-{
-	intpair_t* data;
-	size_t length, capacity;
-} reflow_pairdeque_t;
-
-void reflow_pairdeque_create(struct reflow_pairdeque* stack, size_t initial)
-{
-	stack->data = (intpair_t*) malloc(sizeof(intpair_t) * initial);
-	memset(stack->data, 0, sizeof(intpair_t) * initial);
-	stack->capacity = initial;
-	stack->length = 0;
-}
-
-void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
-{
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
-
-	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
-}
-
-void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
-{
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
-
-	*out = stack->data[stack->length];
-	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
-}
-
-void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
-{
-	memset(stack->data, 0, sizeof(intpair_t) * stack->capacity);
-	stack->length = 0;
-}
-
-void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
-{
-	//This method actually makes this a deque
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
-	*out = stack->data[0];
-	memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
-}
-
-inline int reflow_pairdeque_peek_x(struct reflow_pairdeque* stack)
-{
-	return stack->data[stack->length - 1].x;
-}
-
-inline int reflow_pairdeque_peek_y(struct reflow_pairdeque* stack)
-{
-	return stack->data[stack->length - 1].y;
-}
-
-
-void reflow_pairdeque_push(struct reflow_pairdeque* stack, int x, int y)
-{
-	if(stack->length >= stack->capacity)
-	{
-		stack->capacity <<= 1; //We can only push one value at a time through this function
-		stack->data = (intpair_t*) realloc(stack->data, sizeof(intpair_t) * stack->capacity);
-	}
-
-	stack->data[stack->length].x = x;
-	stack->data[stack->length].y = y;
-	++stack->length;
-}
-
-void reflow_pairdeque_destroy(struct reflow_pairdeque* stack)
-{
-	free(stack->data);
-}
-
-void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outword_b)
+static void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outword_b)
 {
 	size_t halflen = inwordlen / 2;
 	cv_strncpy(outword_a, inword, halflen);
@@ -205,7 +231,7 @@ void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outw
 	cv_push(outword_b, 0);
 }
 
-unsigned int CanWordBeSplit(const char* word, size_t len)
+static inline unsigned int CanWordBeSplit(const char* word, size_t len)
 {
 	if(len < 8 || isupper(word[0]) || word[0] == '"')
 		return 0;
@@ -213,7 +239,7 @@ unsigned int CanWordBeSplit(const char* word, size_t len)
 		return 1;
 }
 
-void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
+static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
 {
 	char* savep = 0;
 	char* ret = 0;
@@ -282,7 +308,7 @@ void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
 	free(inputcopy);
 }
 
-void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs)
+static void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs)
 {
 	const char* p = &text[strspn(text, " ")];
 
@@ -310,9 +336,7 @@ void FindParagraphs(const char* text, size_t length, struct reflow_intstack* par
 	while(found);
 }
 
-
-
-void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	//Uses a shortest paths method to solve optimization problem
 	reflow_strarray_t words;
@@ -451,7 +475,7 @@ void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output
 	reflow_strarray_destroy(&words);
 }
 
-inline int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
+static inline int costfn(int i, int j, const int* minima, const int* offsets, const int width, const int count)
 {
 	int w = j < count ? (offsets[j] - offsets[i] + j - i - 1) : width;
 
@@ -463,7 +487,7 @@ inline int costfn(int i, int j, const int* minima, const int* offsets, const int
 
 }
 
-int hfn(int l, int k, const int* minima, const int* offsets, const int width, const int count)
+static int hfn(int l, int k, const int* minima, const int* offsets, const int width, const int count)
 {
 	int low = l + 1;
 	int high = count;
@@ -489,7 +513,7 @@ int hfn(int l, int k, const int* minima, const int* offsets, const int width, co
 	return l + 2;
 }
 
-void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+static void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
@@ -577,6 +601,8 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 		}
 	}
 
+	reflow_pairdeque_destroy(&deque);
+
 	int i = 0;
 	reflow_intstack_t revbreak;
 	reflow_intstack_create(&revbreak, count);
@@ -636,8 +662,7 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	reflow_strarray_destroy(&words);
 }
 
-
-void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen)
+static void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen)
 {
 	//Preserves blank lines
 	const char* pos = input;
@@ -676,4 +701,68 @@ void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferle
 		}
 	}
 	while(found);
+}
+
+void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+{
+	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
+	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
+	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
+
+	reflow_intstack_t paragraphbounds;
+	reflow_intstack_create(&paragraphbounds, 8);
+
+	cv_t buffer;
+	cv_init(&buffer, len);
+
+	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
+
+	size_t idx = 0;
+	for(; idx < paragraphbounds.length; idx += 2)
+	{
+		int start = paragraphbounds.data[idx];
+		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
+
+		cv_clear(&buffer);
+
+		ReflowParagraphBinary(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+
+		cv_strcat(output, buffer.data);
+	}
+
+	reflow_intstack_destroy(&paragraphbounds);
+	cv_destroy(&buffer);
+	free(nlstrippedbuf);
+}
+
+void ReflowText(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+{
+	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
+	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
+	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
+
+	reflow_intstack_t paragraphbounds;
+	reflow_intstack_create(&paragraphbounds, 8);
+
+	cv_t buffer;
+	cv_init(&buffer, len);
+
+	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
+
+	size_t idx = 0;
+	for(; idx < paragraphbounds.length; idx += 2)
+	{
+		int start = paragraphbounds.data[idx];
+		int end = ((idx + 1) < paragraphbounds.length) ? paragraphbounds.data[idx + 1] : len;
+
+		cv_clear(&buffer);
+
+		ReflowParagraph(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+
+		cv_strcat(output, buffer.data);
+	}
+
+	reflow_intstack_destroy(&paragraphbounds);
+	cv_destroy(&buffer);
+	free(nlstrippedbuf);
 }

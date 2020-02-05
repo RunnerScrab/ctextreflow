@@ -3,34 +3,34 @@
 #include <stdarg.h>
 #include "charvector.h"
 
-typedef struct strarray
+typedef struct reflow_strarray
 {
 	cv_t* strings;
 	size_t length;
 	size_t capacity;
 	unsigned char* hyphenpoints;
 	unsigned char* escapedwords;
-} strarray_t;
+} reflow_strarray_t;
 
-int strarray_create(struct strarray* array, size_t initial_size);
-void strarray_push(struct strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
-void strarray_destroy(struct strarray* array);
+int reflow_strarray_create(reflow_strarray_t* array, size_t initial_size);
+void reflow_strarray_push(reflow_strarray_t* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
+void reflow_strarray_destroy(reflow_strarray_t* array);
 
-typedef struct intstack
+typedef struct reflow_intstack
 {
 	int* data;
 	size_t length;
 	size_t capacity;
-} intstack_t;
+} reflow_intstack_t;
 
-void intstack_create(struct intstack* stack, size_t initial);
-int intstack_pop(struct intstack* stack);
-int intstack_peek(struct intstack* stack);
-void intstack_push(struct intstack* stack, int val);
-void intstack_destroy(struct intstack* stack);
+void reflow_intstack_create(struct reflow_intstack* stack, size_t initial);
+int reflow_intstack_pop(struct reflow_intstack* stack);
+int reflow_intstack_peek(struct reflow_intstack* stack);
+void reflow_intstack_push(struct reflow_intstack* stack, int val);
+void reflow_intstack_destroy(struct reflow_intstack* stack);
 
-void FindParagraphs(const char* text, size_t length, struct intstack* paragraphlocs);
-void TokenizeString(const char* input, size_t inputlen, strarray_t* out);
-void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char);
+void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs);
+void TokenizeString(const char* input, size_t inputlen, reflow_strarray_t* out);
+void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char par_indent_count);
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);
 #endif

@@ -10,7 +10,7 @@
 #define max(a, b) (a > b ? a : b)
 #define min(a, b) (a < b ? a : b)
 
-int strarray_create(struct strarray* array, size_t initial_size)
+int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 {
 	array->length = 0;
 	array->capacity = initial_size;
@@ -20,7 +20,7 @@ int strarray_create(struct strarray* array, size_t initial_size)
 	return array->strings ? 0 : -1;
 }
 
-void strarray_push(struct strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
+void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
 {
 	if(array->length >= array->capacity)
 	{
@@ -41,7 +41,7 @@ void strarray_push(struct strarray* array, char* val, unsigned char bIsEscaped, 
 	++array->length;
 }
 
-void strarray_destroy(struct strarray* array)
+void reflow_strarray_destroy(struct reflow_strarray* array)
 {
 	size_t idx = 0;
 	for(; idx < array->length; ++idx)
@@ -53,14 +53,14 @@ void strarray_destroy(struct strarray* array)
 	free(array->strings);
 }
 
-void intstack_create(struct intstack* stack, size_t initial)
+void reflow_intstack_create(struct reflow_intstack* stack, size_t initial)
 {
 	stack->data = (int*) malloc(sizeof(int) * initial);
 	stack->capacity = initial;
 	stack->length = 0;
 }
 
-int intstack_pop(struct intstack* stack)
+int reflow_intstack_pop(struct reflow_intstack* stack)
 {
 	if(stack->length > 0)
 	{
@@ -73,12 +73,12 @@ int intstack_pop(struct intstack* stack)
 	return retval;
 }
 
-int intstack_peek(struct intstack* stack)
+int reflow_intstack_peek(struct reflow_intstack* stack)
 {
 	return stack->data[stack->length - 1];
 }
 
-void intstack_push(struct intstack* stack, int val)
+void reflow_intstack_push(struct reflow_intstack* stack, int val)
 {
 	if(stack->length >= stack->capacity)
 	{
@@ -90,7 +90,7 @@ void intstack_push(struct intstack* stack, int val)
 	++stack->length;
 }
 
-void intstack_destroy(struct intstack* stack)
+void reflow_intstack_destroy(struct reflow_intstack* stack)
 {
 	free(stack->data);
 }
@@ -106,13 +106,13 @@ void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outw
 
 unsigned int CanWordBeSplit(const char* word, size_t len)
 {
-	if(len < 8 || isupper(word[0]) || word[0] == '"' || (word[0] == '`' && word[len - 1] == '`'))
+	if(len < 8 || isupper(word[0]) || word[0] == '"')
 		return 0;
 	else
 		return 1;
 }
 
-void TokenizeString(const char* input, size_t len, strarray_t* out)
+void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
 {
 	char* savep = 0;
 	char* ret = 0;
@@ -154,7 +154,7 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 					isspace(input[offset + wordlen + 1]))
 					spacealignment |= 4;
 
-				strarray_push(out, rebuilttoken.data, spacealignment, 0);
+				reflow_strarray_push(out, rebuilttoken.data, spacealignment, 0);
 				cv_destroy(&rebuilttoken);
 				lastescapetoken =  offset + wordlen;
 			}
@@ -165,14 +165,14 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 				cv_init(&b, wordlen);
 				SplitWord(ret, wordlen, &a, &b);
 				//By default, the word's cost is its length.
-				strarray_push(out, a.data, 0, 1);
-				strarray_push(out, b.data, 0, 0);
+				reflow_strarray_push(out, a.data, 0, 1);
+				reflow_strarray_push(out, b.data, 0, 0);
 				cv_destroy(&a);
 				cv_destroy(&b);
 			}
 			else
 			{
-				strarray_push(out, ret, 0, 0);
+				reflow_strarray_push(out, ret, 0, 0);
 			}
 		}
 	}
@@ -181,7 +181,7 @@ void TokenizeString(const char* input, size_t len, strarray_t* out)
 	free(inputcopy);
 }
 
-void FindParagraphs(const char* text, size_t length, struct intstack* paragraphlocs)
+void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs)
 {
 	/*
 	  Find the first text.
@@ -196,7 +196,7 @@ void FindParagraphs(const char* text, size_t length, struct intstack* paragraphl
 
 	const char* p = text;
 	for(; *p && isspace(*p); ++p);
-	intstack_push(paragraphlocs, p - text);
+	reflow_intstack_push(paragraphlocs, p - text);
 	const char* found = 0;
 	do
 	{
@@ -210,8 +210,8 @@ void FindParagraphs(const char* text, size_t length, struct intstack* paragraphl
 			{
 				//We have encountered at least one blank line, which separates
 				//paragraphs
-				intstack_push(paragraphlocs, found - text - 1); // Push end of last paragraph
-				intstack_push(paragraphlocs, nlrun - text); //Push start of new one
+				reflow_intstack_push(paragraphlocs, found - text - 1); // Push end of last paragraph
+				reflow_intstack_push(paragraphlocs, nlrun - text); //Push start of new one
 
 			}
 			p = nlrun;
@@ -222,11 +222,11 @@ void FindParagraphs(const char* text, size_t length, struct intstack* paragraphl
 
 
 
-void ReflowText(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
 {
 	//Uses a shortest paths method to solve optimization problem
-	strarray_t words;
-	strarray_create(&words, 64);
+	reflow_strarray_t words;
+	reflow_strarray_create(&words, 64);
 
 	TokenizeString((char*) text, len, &words);
 
@@ -242,15 +242,15 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 	size_t idx = 0;
 	size_t count = words.length;
 
-	struct intstack offsets;
-	intstack_create(&offsets, count + 1);
-	intstack_push(&offsets, 0);
+	struct reflow_intstack offsets;
+	reflow_intstack_create(&offsets, count + 1);
+	reflow_intstack_push(&offsets, 0);
 
 	//Calculate word costs. Words which do not represent a control sequence have a
 	//cost simply equal to their length.
 	for(idx = 0; idx < count; ++idx)
 	{
-		intstack_push(&offsets, intstack_peek(&offsets) +
+		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
 			(words.escapedwords[idx] ? 0 : words.strings[idx].length));
 	}
 
@@ -300,23 +300,23 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 		}
 	}
 
-	intstack_t revbreak;
-	intstack_create(&revbreak, count);
+	reflow_intstack_t revbreak;
+	reflow_intstack_create(&revbreak, count);
 	j = count;
-	intstack_push(&revbreak, count);
+	reflow_intstack_push(&revbreak, count);
 	while(j > 0)
 	{
 		i = breaks[j];
-		intstack_push(&revbreak, i);
+		reflow_intstack_push(&revbreak, i);
 		j = i;
 	}
-	i = intstack_pop(&revbreak);
+	i = reflow_intstack_pop(&revbreak);
 
 	cv_t wordbuf;
 	cv_init(&wordbuf, 64);
 	do
 	{
-		j = intstack_pop(&revbreak);
+		j = reflow_intstack_pop(&revbreak);
 
 		for(idx = i; idx < j; ++idx)
 		{
@@ -350,11 +350,11 @@ void ReflowText(const char* text, size_t len, const int width, cv_t* output, uns
 	while(j);
 
 	cv_destroy(&wordbuf);
-	intstack_destroy(&revbreak);
+	reflow_intstack_destroy(&revbreak);
 	free(minima);
 	free(breaks);
-	intstack_destroy(&offsets);
-	strarray_destroy(&words);
+	reflow_intstack_destroy(&offsets);
+	reflow_strarray_destroy(&words);
 }
 
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen)

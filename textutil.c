@@ -284,19 +284,8 @@ void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
 
 void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs)
 {
-	/*
-	  Find the first text.
+	const char* p = &text[strspn(text, " ")];
 
-	  Find first newline after the text begins.
-
-	  If newline followed by another newline, mark location of last
-	  newline as the start of a new paragraph.
-
-	  Count the number of contiguous newlines and store with the paragraph.
-	*/
-
-	const char* p = text;
-	for(; *p && isspace(*p); ++p);
 	reflow_intstack_push(paragraphlocs, p - text);
 	const char* found = 0;
 	do

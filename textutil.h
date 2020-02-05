@@ -34,5 +34,6 @@ void reflow_intstack_destroy(struct reflow_intstack* stack);
 void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs);
 void TokenizeString(const char* input, size_t inputlen, reflow_strarray_t* out);
 void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char par_indent_count);
+void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char par_indent_count);
 void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);
 #endif

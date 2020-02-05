@@ -14,9 +14,16 @@ int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 {
 	array->length = 0;
 	array->capacity = initial_size;
-	array->strings = (cv_t*) malloc(sizeof(cv_t) * initial_size);
-	array->hyphenpoints = (unsigned char*) malloc(sizeof(unsigned char) * initial_size);
-	array->escapedwords = (unsigned char*) malloc(sizeof(unsigned char) * initial_size);
+	size_t strarrsize = sizeof(cv_t) * initial_size;
+	size_t flagsize = sizeof(unsigned char) * initial_size;
+
+	array->strings = (cv_t*) malloc(strarrsize);
+	array->hyphenpoints = (unsigned char*) malloc(flagsize);
+	array->escapedwords = (unsigned char*) malloc(flagsize);
+
+	memset(array->strings, 0, strarrsize);
+	memset(array->hyphenpoints, 0, flagsize);
+	memset(array->escapedwords, 0, flagsize);
 	return array->strings ? 0 : -1;
 }
 
@@ -112,6 +119,95 @@ void reflow_intstack_destroy(struct reflow_intstack* stack)
 {
 	free(stack->data);
 }
+
+///////////////////////////////////
+typedef struct intpair
+{
+	int x, y;
+} intpair_t;
+
+typedef struct reflow_pairdeque
+{
+	intpair_t* data;
+	size_t length, capacity;
+} reflow_pairdeque_t;
+
+void reflow_pairdeque_create(struct reflow_pairdeque* stack, size_t initial)
+{
+	stack->data = (intpair_t*) malloc(sizeof(intpair_t) * initial);
+	memset(stack->data, 0, sizeof(intpair_t) * initial);
+	stack->capacity = initial;
+	stack->length = 0;
+}
+
+void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
+{
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+
+	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+}
+
+void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
+{
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+
+	*out = stack->data[stack->length];
+	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+}
+
+void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
+{
+	memset(stack->data, 0, sizeof(intpair_t) * stack->capacity);
+	stack->length = 0;
+}
+
+void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
+{
+	//This method actually makes this a deque
+	if(stack->length > 0)
+	{
+		--stack->length;
+	}
+	*out = stack->data[0];
+	memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
+}
+
+inline int reflow_pairdeque_peek_x(struct reflow_pairdeque* stack)
+{
+	return stack->data[stack->length - 1].x;
+}
+
+inline int reflow_pairdeque_peek_y(struct reflow_pairdeque* stack)
+{
+	return stack->data[stack->length - 1].y;
+}
+
+
+void reflow_pairdeque_push(struct reflow_pairdeque* stack, int x, int y)
+{
+	if(stack->length >= stack->capacity)
+	{
+		stack->capacity <<= 1; //We can only push one value at a time through this function
+		stack->data = (intpair_t*) realloc(stack->data, sizeof(intpair_t) * stack->capacity);
+	}
+
+	stack->data[stack->length].x = x;
+	stack->data[stack->length].y = y;
+	++stack->length;
+}
+
+void reflow_pairdeque_destroy(struct reflow_pairdeque* stack)
+{
+	free(stack->data);
+}
+
+//////////////////////////////////
 
 void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_t* outword_b)
 {
@@ -384,7 +480,7 @@ int costfn(int i, int j, const int* minima, const int* offsets, const int width,
 
 	if(w > width)
 	{
-		return  10000 * (w - width);
+		return  (w - width) << 16;
 	}
 	return minima[i] + (width - w) * (width - w);
 
@@ -397,7 +493,7 @@ int hfn(int l, int k, const int* minima, const int* offsets, const int width, co
 	int mid = 0;
 	while(low < high)
 	{
-		mid = (low + high)/2;
+		mid = (low + high)>>1;
 		if(costfn(l, mid, minima, offsets, width, count) <=
 			costfn(k, mid, minima, offsets, width, count))
 		{
@@ -454,30 +550,25 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	memset(breaks, 0, sizeof(int) * (count + 1));
 	memset(minima, 0, sizeof(int) * (count + 1));
 
+	struct reflow_pairdeque deque;
+	reflow_pairdeque_create(&deque, 32);
+	reflow_pairdeque_push(&deque, 1, 0);
 
-	struct reflow_intstack dequex, dequey;
-	reflow_intstack_create(&dequex, 32);
-	reflow_intstack_create(&dequey, 32);
-	reflow_intstack_push(&dequex, 1);
-	reflow_intstack_push(&dequey, 0);
-
-
-	int j = 1;
+	int j = 1, l = 0, peekx = 0, peeky = 0;
+	unsigned char thishyphenpoint = 0;
 	for(; j <= count; ++j)
 	{
-		int l = dequex.data[0];
+		l = deque.data[0].x;
 		if(costfn(j - 1, j, minima, offsets.data, width, count) < costfn(l, j, minima, offsets.data, width, count))
 		{
 			minima[j] = costfn(j - 1, j, minima, offsets.data, width, count);
 			breaks[j] = j - 1;
-			reflow_intstack_clear(&dequex);
-			reflow_intstack_clear(&dequey);
-			reflow_intstack_push(&dequex, j - 1);
-			reflow_intstack_push(&dequey, j + 1);
+			reflow_pairdeque_clear(&deque);
+			reflow_pairdeque_push(&deque, j - 1, j + 1);
 		}
 		else
 		{
-			unsigned char thishyphenpoint = words.hyphenpoints[j];
+			thishyphenpoint = words.hyphenpoints[j];
 			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
 			{
 				minima[j] = costfn(l, j, minima, offsets.data, width, count);
@@ -487,22 +578,25 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 				else
 					wsincelasthyphen += width;
 			}
-			while(costfn(j - 1, reflow_intstack_peek(&dequey), minima, offsets.data, width, count) <=
-				costfn(reflow_intstack_peek(&dequex), reflow_intstack_peek(&dequey), minima, offsets.data, width, count))
+
+			while(1)
 			{
-				reflow_intstack_pop(&dequex);
-				reflow_intstack_pop(&dequey);
+				peekx = reflow_pairdeque_peek_x(&deque);
+				peeky = reflow_pairdeque_peek_y(&deque);
+				if(costfn(j - 1, peekx, minima, offsets.data, width, count) >
+					costfn(peekx, peeky, minima, offsets.data, width, count))
+					break;
+				reflow_pairdeque_popnoret(&deque);
 			}
-			reflow_intstack_push(&dequex, j - 1);
-			reflow_intstack_push(&dequey, hfn(j - 1, reflow_intstack_peek(&dequex), minima, offsets.data, width, count));
-			if((j + 1) == dequey.data[1])
+
+			reflow_pairdeque_push(&deque, j - 1, hfn(j - 1, reflow_pairdeque_peek_x(&deque), minima, offsets.data, width, count));
+			if((j + 1) == deque.data[1].y)
 			{
-				reflow_intstack_popleft(&dequex);
-				reflow_intstack_popleft(&dequey);
+				reflow_pairdeque_popnoret(&deque);
 			}
 			else
 			{
-				++dequey.data[0];
+				++deque.data[0].y;
 			}
 		}
 	}
@@ -557,8 +651,7 @@ void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* 
 	}
 	while(j);
 
-	reflow_intstack_destroy(&dequex);
-	reflow_intstack_destroy(&dequey);
+	reflow_pairdeque_destroy(&deque);
 	cv_destroy(&wordbuf);
 	reflow_intstack_destroy(&revbreak);
 	free(minima);

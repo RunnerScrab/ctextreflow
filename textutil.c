@@ -34,45 +34,45 @@ static void reflow_pairdeque_create(struct reflow_pairdeque* stack, size_t initi
 	stack->length = 0;
 }
 
-static void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
+static inline void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
 {
 	if(stack->length > 0)
 	{
 		--stack->length;
 	}
 
-	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+	//memset(&stack->data[stack->length], 0, sizeof(intpair_t)); //Not clearing makes pop less correct, but still works as used in this file
 }
 
 /*
-static void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
-{
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
+  static void reflow_pairdeque_pop(struct reflow_pairdeque* stack, intpair_t* out)
+  {
+  if(stack->length > 0)
+  {
+  --stack->length;
+  }
 
-	*out = stack->data[stack->length];
-	memset(&stack->data[stack->length], 0, sizeof(intpair_t));
-}
+  *out = stack->data[stack->length];
+  memset(&stack->data[stack->length], 0, sizeof(intpair_t));
+  }
 */
 
-static void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
+static inline void reflow_pairdeque_clear(struct reflow_pairdeque* stack)
 {
-	memset(stack->data, 0, sizeof(intpair_t) * stack->capacity);
+	//memset(stack->data, 0, sizeof(intpair_t) * stack->capacity); //Not clearing makes clear less correct, but still works as used in this file
 	stack->length = 0;
 }
 
 /*
-static void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
-{
-	if(stack->length > 0)
-	{
-		--stack->length;
-	}
-	*out = stack->data[0];
-	memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
-}
+  static void reflow_pairdeque_popleft(struct reflow_pairdeque* stack, intpair_t* out)
+  {
+  if(stack->length > 0)
+  {
+  --stack->length;
+  }
+  *out = stack->data[0];
+  memmove(stack->data, &stack->data[1], sizeof(intpair_t) * stack->length);
+  }
 */
 
 static inline int reflow_pairdeque_peek_x(struct reflow_pairdeque* stack)
@@ -90,7 +90,7 @@ static void reflow_pairdeque_push(struct reflow_pairdeque* stack, int x, int y)
 {
 	if(stack->length >= stack->capacity)
 	{
-		stack->capacity <<= 1; //We can only push one value at a time through this function
+		stack->capacity <<= 2; //We can only push one value at a time through this function
 		stack->data = (intpair_t*) realloc(stack->data, sizeof(intpair_t) * stack->capacity);
 	}
 
@@ -208,7 +208,7 @@ static void reflow_intstack_push(struct reflow_intstack* stack, int val)
 {
 	if(stack->length >= stack->capacity)
 	{
-		stack->capacity <<= 1; //We can only push one value at a time through this function
+		stack->capacity <<= 2; //We can only push one value at a time through this function
 		stack->data = (int*) realloc(stack->data, sizeof(int) * stack->capacity);
 	}
 
@@ -246,11 +246,18 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 	char* inputcopy = (char*) malloc(sizeof(char) * (len +1));
 	memcpy(inputcopy, input, sizeof(char) * (len));
 	inputcopy[len] = 0;
-	size_t offset = 0, lastescapetoken = 0;
+	size_t offset = 0, lastescapetoken = 0, wordlen = 0;
+	unsigned char spacealignment = 0;
+
+	cv_t rebuilttoken;
+	cv_init(&rebuilttoken, 32);
+	cv_t a, b;
+	cv_init(&a, 16);
+	cv_init(&b, 16);
+
 	do
 	{
 		ret = strtok_r(ret ? 0 : inputcopy, " `", &savep);
-
 
 		if(ret && ret >= &inputcopy[len - 1])
 		{
@@ -260,7 +267,7 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 		else if(ret)
 		{
 			offset = ret - inputcopy;
-			size_t wordlen = strlen(ret);
+			wordlen = strlen(ret);
 			if(offset > 0 && input[offset - 1] == '`' && lastescapetoken != offset - 1 &&
 				(offset + wordlen) < len && input[offset + wordlen] == '`')
 
@@ -269,11 +276,10 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 				//they perform control functions (enabling color, bold, italics, etc.).
 				//Here we store metadata for them for the reflow algorithm to later use when
 				//placing words down.
-				cv_t rebuilttoken;
-				cv_init(&rebuilttoken, wordlen + 3);
+
 				cv_sprintf(&rebuilttoken, "`%s`", ret);
 
-				unsigned char spacealignment = 1;
+				spacealignment = 1;
 				//bit 1 set for any escaped word, bit 2 set for space on the left, bit 4 set for space on the right
 				if((offset - 2) > 0 && isspace(input[offset - 2]))
 					spacealignment |= 2;
@@ -282,20 +288,16 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 					spacealignment |= 4;
 
 				reflow_strarray_push(out, rebuilttoken.data, spacealignment, 0);
-				cv_destroy(&rebuilttoken);
+
 				lastescapetoken =  offset + wordlen;
 			}
 			else if(CanWordBeSplit(ret, wordlen))
 			{
-				cv_t a, b;
-				cv_init(&a, wordlen);
-				cv_init(&b, wordlen);
+
 				SplitWord(ret, wordlen, &a, &b);
 				//By default, the word's cost is its length.
 				reflow_strarray_push(out, a.data, 0, 1);
 				reflow_strarray_push(out, b.data, 0, 0);
-				cv_destroy(&a);
-				cv_destroy(&b);
 			}
 			else
 			{
@@ -305,6 +307,9 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 	}
 	while(ret);
 
+	cv_destroy(&a);
+	cv_destroy(&b);
+	cv_destroy(&rebuilttoken);
 	free(inputcopy);
 }
 
@@ -601,7 +606,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 		}
 	}
 
-	reflow_pairdeque_destroy(&deque);
+
 
 	int i = 0;
 	reflow_intstack_t revbreak;
@@ -654,6 +659,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 	}
 	while(j);
 
+	reflow_pairdeque_destroy(&deque);
 	cv_destroy(&wordbuf);
 	reflow_intstack_destroy(&revbreak);
 	free(minima);

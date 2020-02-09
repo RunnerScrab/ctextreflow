@@ -212,7 +212,7 @@ static void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_
 
 static inline unsigned int CanWordBeSplit(const char* word, size_t len)
 {
-	if(len < 8 || isupper(word[0]) || word[0] == '"')
+	if(len < 8 || isupper(word[0]) || word[0] == '"' || memchr(word, '-', len))
 		return 0;
 	else
 		return 1;

@@ -1,8 +1,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#ifndef __builtin_ctz
-static int nlz(unsigned int x)
+
+int nlz(unsigned int x)
 {
 	//Goryavsky's nlz, a variation of Harley's algorithm
 	static char table[64] =
@@ -22,7 +22,7 @@ static int nlz(unsigned int x)
 	return (int) table[x >> 26];
 }
 
-static int ntz(unsigned int x)
+int ntz(unsigned int x)
 {
 	//John Reiser's ntz
 	static char table[37] = {
@@ -35,7 +35,7 @@ static int ntz(unsigned int x)
 	x = (x & -x) % 37;
 	return table[x];
 }
-#endif
+
 
 static unsigned int leadingones(unsigned char byte)
 {
@@ -94,11 +94,9 @@ const char* utf8findstart(const char* str, size_t bytelen)
 	unsigned int* p = (unsigned int*) str;
 	for(; idx < intlen; ++idx)
 	{
-		#ifdef __builtin_ctz
+
 		size_t offset = __builtin_ctz(p[idx] & 0x80808080) >> 3; //This must remain 3
-		#else
-		size_t offset = ntz(p[idx] & 0x80808080) >> 3;
-		#endif
+
 		if(4 == offset)
 		{
 			continue;

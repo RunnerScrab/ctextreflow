@@ -248,7 +248,7 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 		else if(ret)
 		{
 			offset = ret - inputcopy;
-			wordlen = strlen(ret);
+			wordlen = strnlen(ret, &input[len] - ret);
 			if(offset > 0 && input[offset - 1] == '`' && lastescapetoken != offset - 1 &&
 				(offset + wordlen) < len && input[offset + wordlen] == '`')
 

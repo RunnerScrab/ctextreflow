@@ -121,9 +121,9 @@ static void StripNewline(const char* input, size_t inputlen, char* out, size_t b
 static int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
 {
 	array->length = 0;
-	array->capacity = initial_size;
+	array->capacity = max(initial_size, 1);
 
-	size_t strarrsize = sizeof(reflow_word_t) * initial_size;
+	size_t strarrsize = sizeof(reflow_word_t) * array->capacity;
 	array->strings = (reflow_word_t*) malloc(strarrsize);
 	memset(array->strings, 0, strarrsize);
 
@@ -160,8 +160,8 @@ static void reflow_strarray_destroy(struct reflow_strarray* array)
 
 static void reflow_intstack_create(struct reflow_intstack* stack, size_t initial)
 {
-	stack->data = (int*) malloc(sizeof(int) * initial);
-	stack->capacity = initial;
+	stack->capacity = max(1, initial);
+	stack->data = (int*) malloc(sizeof(int) * stack->capacity);
 	stack->length = 0;
 }
 

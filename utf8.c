@@ -94,15 +94,17 @@ const char* utf8findstart(const char* str, size_t bytelen)
 	unsigned int intlen = bytelen >> 2; //bytes int-divided by the size of the int we're using; 2^3 = 8
 	size_t idx = 0;
 	unsigned int* p = (unsigned int*) str;
+	size_t maskedval = 0;
 	for(; idx < intlen; ++idx)
 	{
 
-		size_t offset = ntz(p[idx] & 0x80808080) >> 3; //This must remain 3
-
-		if(4 == offset)
+		maskedval = p[idx] & 0x80808080;
+		if(!maskedval)
 		{
 			continue;
 		}
+
+		size_t offset = ntz(maskedval) >> 3; //This must remain 3
 
 		return &str[(idx << 2) + (offset)];
 	}

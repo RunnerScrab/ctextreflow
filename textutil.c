@@ -34,11 +34,15 @@ static void reflow_pairdeque_create(struct reflow_pairdeque* stack, size_t initi
 	stack->length = 0;
 }
 
-static inline void reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
+static inline int reflow_pairdeque_popnoret(struct reflow_pairdeque* stack)
 {
 	if(stack->length > 0)
 	{
-		--stack->length;
+		return --stack->length;
+	}
+	else
+	{
+		return -1;
 	}
 
 //Not clearing memory makes pop less correct, but still works correctly as used
@@ -337,6 +341,10 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 	{
 		i = breaks[j];
 		reflow_intstack_push(&revbreak, i);
+		if(j == i)
+		{
+			break;
+		}
 		j = i;
 	}
 	i = reflow_intstack_pop(&revbreak);
@@ -390,6 +398,11 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 	unsigned char bAllowHyphenation)
 {
 	//Uses a shortest paths method to solve optimization problem
+	if(len <= width)
+	{
+		cv_strncat(output, text, len);
+		return;
+	}
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 
@@ -526,6 +539,11 @@ static void ReflowParagraphBinary(const char* text, size_t len,
 				const int width, cv_t* output,
 				unsigned char bIndentFirstWord, unsigned char bAllowHyphenation)
 {
+	if(len <= width)
+	{
+		cv_strncat(output, text, len);
+		return;
+	}
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 
@@ -600,10 +618,12 @@ static void ReflowParagraphBinary(const char* text, size_t len,
 			{
 				peekx = reflow_pairdeque_peek_x(&deque);
 				peeky = reflow_pairdeque_peek_y(&deque);
+
 				if(costfn(j - 1, peekx, minima, offsets.data, width, count) >
 					costfn(peekx, peeky, minima, offsets.data, width, count))
 					break;
-				reflow_pairdeque_popnoret(&deque);
+				if(reflow_pairdeque_popnoret(&deque) < 0)
+					break;
 			}
 
 			reflow_pairdeque_push(&deque, j - 1,

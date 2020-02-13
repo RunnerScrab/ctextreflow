@@ -115,7 +115,7 @@ static void reflow_intstack_push(struct reflow_intstack* stack, int val);
 static void reflow_intstack_destroy(struct reflow_intstack* stack);
 
 static void FindParagraphs(const char* text, size_t length, struct reflow_intstack* paragraphlocs);
-static void TokenizeString(const char* input, size_t inputlen, reflow_strarray_t* out);
+static void TokenizeString(const char* input, size_t inputlen, reflow_strarray_t* out, unsigned char bPermitHyphenation);
 static void StripNewline(const char* input, size_t inputlen, char* out, size_t bufferlen);
 
 static int reflow_strarray_create(struct reflow_strarray* array, size_t initial_size)
@@ -212,15 +212,18 @@ static void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_
 
 static inline unsigned int CanWordBeSplit(const char* word, size_t len)
 {
-	const char* p = utf8findstart(word, len);
-
-	if(len < 8 || isupper(word[0]) || word[0] == '"' || memchr(word, '-', len) || p)
+	if(len < 8 || isupper(word[0]) || word[0] == '"' || memchr(word, '-', len) ||
+		utf8findstart(word, len))
+	{
 		return 0;
+	}
 	else
+	{
 		return 1;
+	}
 }
 
-static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out)
+static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out, unsigned char bCreateHyphenPoints)
 {
 	char* savep = 0;
 	char* ret = 0;
@@ -272,7 +275,7 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 
 				lastescapetoken =  offset + wordlen;
 			}
-			else if(CanWordBeSplit(ret, wordlen))
+			else if(bCreateHyphenPoints && CanWordBeSplit(ret, wordlen))
 			{
 
 				SplitWord(ret, wordlen, &a, &b);
@@ -383,13 +386,14 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 	reflow_intstack_destroy(&revbreak);
 }
 
-static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord,
+	unsigned char bAllowHyphenation)
 {
 	//Uses a shortest paths method to solve optimization problem
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 
-	TokenizeString((char*) text, len, &words);
+	TokenizeString((char*) text, len, &words, bAllowHyphenation);
 
 	if(bIndentFirstWord)
 	{
@@ -425,6 +429,7 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 
 	int i = 0, j = 0, w = 0, cost = 0;
 	unsigned char thishyphenpoint = 0;
+	const int hyphenspace = width << 1;
 	for(; i <= count; ++i)
 	{
 		for(j = i + 1; j <= count; ++j)
@@ -451,16 +456,18 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 
 			if(cost < minima[j])
 			{
-				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > (width<<1)))
+				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > hyphenspace))
 				{
+					//We don't want to end multiple lines in a row on a hyphen
 					if(thishyphenpoint)
 					{
-						printf("Hyphenating %s %u > %u\n", words.strings[j].string.data,
-							wsincelasthyphen, width<<1);
 						wsincelasthyphen = 0;
 					}
 					else
+					{
 						wsincelasthyphen += width;
+					}
+
 					minima[j] = cost;
 					breaks[j] = i;
 				}
@@ -515,12 +522,14 @@ static int hfn(int l, int k, const int* minima, const int* offsets, const int wi
 	return l + 2;
 }
 
-static void ReflowParagraphBinary(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord)
+static void ReflowParagraphBinary(const char* text, size_t len,
+				const int width, cv_t* output,
+				unsigned char bIndentFirstWord, unsigned char bAllowHyphenation)
 {
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 
-	TokenizeString((char*) text, len, &words);
+	TokenizeString((char*) text, len, &words, bAllowHyphenation);
 
 	if(bIndentFirstWord)
 	{
@@ -561,6 +570,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 
 	int j = 1, l = 0, peekx = 0, peeky = 0, mincost = 0;
 	unsigned char thishyphenpoint = 0;
+	const int hyphenspace = width << 1;
 	for(; j <= count; ++j)
 	{
 		l = deque.data[0].x;
@@ -576,7 +586,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 		else
 		{
 			thishyphenpoint = words.strings[j].bHyphenPoint;
-			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > (width<<1)))
+			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > hyphenspace))
 			{
 				minima[j] = costfn(l, j, minima, offsets.data, width, count);
 				breaks[j] = l;
@@ -665,10 +675,11 @@ static void StripNewline(const char* input, size_t inputlen, char* out, size_t b
 	while(found);
 }
 
-typedef void (*ReflowParagraphFn)(const char*, size_t, const int, cv_t*, unsigned char);
+typedef void (*ReflowParagraphFn)(const char*, size_t, const int, cv_t*, unsigned char, unsigned char);
 
-static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces,
-				ReflowParagraphFn rpfn)
+static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* output,
+				const int width, unsigned char num_indent_spaces,
+				unsigned char bAllowHyphenation, ReflowParagraphFn rpfn)
 {
 	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
 	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
@@ -690,7 +701,7 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 		cv_clear(&buffer);
 
-		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces);
+		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces, bAllowHyphenation);
 
 		cv_strcat(output, buffer.data);
 	}
@@ -700,12 +711,14 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 	free(nlstrippedbuf);
 }
 
-void ReflowText(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+void ReflowText(const char* input, const size_t len, cv_t* output, struct ReflowParameters* parameters)
 {
-	ReflowTextImpl(input, len, output, width, num_indent_spaces, ReflowParagraph);
+	ReflowTextImpl(input, len, output, parameters->line_width,
+		parameters->num_indent_spaces, parameters->bAllowHyphenation, ReflowParagraph);
 }
 
-void ReflowTextBinary(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces)
+void ReflowTextBinary(const char* input, const size_t len, cv_t* output, struct ReflowParameters* parameters)
 {
-	ReflowTextImpl(input, len, output, width, num_indent_spaces, ReflowParagraphBinary);
+	ReflowTextImpl(input, len, output, parameters->line_width, parameters->num_indent_spaces,
+		parameters->bAllowHyphenation, ReflowParagraphBinary);
 }

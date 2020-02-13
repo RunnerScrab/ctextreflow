@@ -53,20 +53,22 @@ static unsigned int leadingones(unsigned char byte)
 	return table[byte];
 }
 
-/*
+#ifdef __x86_64__
 const char* utf8findstart(const char* str, size_t bytelen)
 {
 	//HACK: This routine only works on little endian machines
 	unsigned long long intlen = bytelen >> 3; //bytes int-divided by the size of the int we're using; 2^3 = 8
 	size_t idx = 0;
 	unsigned long long* p = (unsigned long long*) str;
+	unsigned long long maskedval = 0;
 	for(; idx < intlen; ++idx)
 	{
-		size_t offset = __builtin_ctzll(p[idx] & 0x8080808080808080) >> 3; //This must remain 3
-		if(8 == offset)
+		maskedval = p[idx] & 0x8080808080808080;
+		if(!maskedval)
 		{
 			continue;
 		}
+		size_t offset = __builtin_ctzll(maskedval) >> 3; //This must remain 3
 
 		return &str[(idx << 3) + (offset)]; //This 3 is to multiply by 8, for # of bytes in the int we're using
 	}
@@ -85,7 +87,7 @@ const char* utf8findstart(const char* str, size_t bytelen)
 
 	return 0;
 }
-*/
+#else
 const char* utf8findstart(const char* str, size_t bytelen)
 {
 	//HACK: This routine only works on little endian machines
@@ -119,21 +121,7 @@ const char* utf8findstart(const char* str, size_t bytelen)
 
 	return 0;
 }
-
-
-size_t utf8strnlen_recursive(const char* str, size_t bytelen)
-{
-	const char* p = utf8findstart(str, bytelen);
-	if(!p)
-	{
-		return strnlen(str, bytelen);
-	}
-
-	unsigned char utf8charwidth = leadingones(*p);
-	size_t blen = utf8charwidth + (p - str);
-
-	return (p - str) + utf8strnlen_recursive(str + blen, bytelen - blen);
-}
+#endif
 
 size_t utf8strnlen(const char* str, size_t bytelen)
 {

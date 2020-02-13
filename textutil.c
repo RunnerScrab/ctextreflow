@@ -4,7 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-
+#include "utf8.h"
 #include "charvector.h"
 
 #define max(a, b) (a > b ? a : b)
@@ -212,7 +212,9 @@ static void SplitWord(const char* inword, size_t inwordlen, cv_t* outword_a, cv_
 
 static inline unsigned int CanWordBeSplit(const char* word, size_t len)
 {
-	if(len < 8 || isupper(word[0]) || word[0] == '"' || memchr(word, '-', len))
+	const char* p = utf8findstart(word, len);
+
+	if(len < 8 || isupper(word[0]) || word[0] == '"' || memchr(word, '-', len) || p)
 		return 0;
 	else
 		return 1;
@@ -409,8 +411,9 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 	//cost simply equal to their length.
 	for(idx = 0; idx < count; ++idx)
 	{
+		const reflow_word_t* pword = &words.strings[idx];
 		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
-				(words.strings[idx].bEscaped ? 0 : words.strings[idx].string.length));
+				(pword->bEscaped ? 0 : utf8strnlen(pword->string.data, pword->string.length)));
 	}
 
 	int* minima = (int*) malloc(sizeof(int) * (count+1));
@@ -448,12 +451,16 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 
 			if(cost < minima[j])
 			{
-				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
+				if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > (width<<1)))
 				{
 					if(thishyphenpoint)
+					{
+						printf("Hyphenating %s %u > %u\n", words.strings[j].string.data,
+							wsincelasthyphen, width<<1);
 						wsincelasthyphen = 0;
+					}
 					else
-					        wsincelasthyphen += width;
+						wsincelasthyphen += width;
 					minima[j] = cost;
 					breaks[j] = i;
 				}
@@ -536,8 +543,10 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 	//cost simply equal to their length.
 	for(idx = 0; idx < count; ++idx)
 	{
+		const reflow_word_t* pword = &words.strings[idx];
 		reflow_intstack_push(&offsets, reflow_intstack_peek(&offsets) +
-				(words.strings[idx].bEscaped ? 0 : words.strings[idx].string.length));
+				(pword->bEscaped ? 0 :
+					utf8strnlen(pword->string.data, pword->string.length)));
 	}
 
 	int* minima = (int*) malloc(sizeof(int) * (count + 1));
@@ -567,7 +576,7 @@ static void ReflowParagraphBinary(const char* text, size_t len, const int width,
 		else
 		{
 			thishyphenpoint = words.strings[j].bHyphenPoint;
-			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen >= (width)))
+			if(!thishyphenpoint || (thishyphenpoint && wsincelasthyphen > (width<<1)))
 			{
 				minima[j] = costfn(l, j, minima, offsets.data, width, count);
 				breaks[j] = l;
@@ -659,7 +668,7 @@ static void StripNewline(const char* input, size_t inputlen, char* out, size_t b
 typedef void (*ReflowParagraphFn)(const char*, size_t, const int, cv_t*, unsigned char);
 
 static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* output, const int width, unsigned char num_indent_spaces,
-	ReflowParagraphFn rpfn)
+				ReflowParagraphFn rpfn)
 {
 	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
 	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));

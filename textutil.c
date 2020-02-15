@@ -367,7 +367,7 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 				if(spaceescapeflag)
 				{
 					cv_sprintf(&wordbuf, "%*s%s%*s",
-						!!(spaceescapeflag & 2), "", pword->string.data,
+						(!!(spaceescapeflag & 2) && i != idx), "", pword->string.data,
 						!!(spaceescapeflag & 4), "");
 					cv_swap(&wordbuf, &pword->string);
 				}

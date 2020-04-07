@@ -50,3 +50,152 @@ unsigned int leadingones(unsigned char byte)
 	};
 	return table[byte];
 }
+
+#ifdef __x86_64__
+const char* findfirstnonspace(const char* str, size_t bytelen)
+{
+	//HACK: This routine only works on little endian machines
+	unsigned long long intlen = bytelen >> 3;
+	size_t idx = 0;
+	unsigned long long* p = (unsigned long long*) str;
+	unsigned long long maskedval = 0;
+	for(; idx < intlen; ++idx)
+	{
+		maskedval = p[idx] ^ 0x2020202020202020;
+		if(!maskedval)
+		{
+			continue;
+		}
+		size_t offset = __builtin_ctzll(maskedval) >> 3;
+		return &str[(idx << 3) + (offset)];
+	}
+
+	size_t remainder = bytelen - (intlen << 3);
+	size_t charidx = (idx << 3);
+	size_t charend = charidx + remainder;
+	for(; charidx < charend; ++charidx)
+	{
+		if(str[charidx] ^ 0x20)
+		{
+			return &str[charidx];
+		}
+	}
+
+	return 0;
+}
+
+const char* lastnonspace(const char* str, size_t bytelen)
+{
+	unsigned int intlen = bytelen >> 3;
+	unsigned int remainder = bytelen - (intlen << 3);
+
+	if(remainder)
+	{
+		int idx = bytelen - 1;
+		int margin = bytelen - remainder;
+		for(; idx >= margin; --idx)
+		{
+			if(str[idx] ^ 0x20)
+			{
+				return &str[idx];
+			}
+		}
+	}
+	if(intlen)
+	{
+		int idx = intlen - 1;
+		unsigned long long* p = (unsigned long long*) str;
+		unsigned long long maskedval = 0;
+		for(; idx >= 0; --idx)
+		{
+
+			maskedval = p[idx] ^ 0x2020202020202020;
+			if(!maskedval)
+			{
+				continue;
+			}
+			size_t offset = __builtin_clzll(maskedval) >> 3; //This must remain 3, to convert bits to bytes
+			return &str[(idx << 3) + (7 - offset)];
+		}
+	}
+
+	//No non-spaces detected
+	return 0;
+}
+
+#else
+const char* findfirstnonspace(const char* str, size_t bytelen)
+{
+	//HACK: This routine only works on little endian machines
+	unsigned int intlen = bytelen >> 2; //bytes int-divided by the size of the int we're using; 2^3 = 8
+	size_t idx = 0;
+	unsigned int* p = (unsigned int*) str;
+	size_t maskedval = 0;
+	for(; idx < intlen; ++idx)
+	{
+
+		maskedval = p[idx] ^ 0x20202020;
+		if(!maskedval)
+		{
+			continue;
+		}
+
+		size_t offset = ntz(maskedval) >> 3; //This must remain 3
+
+		return &str[(idx << 2) + (offset)];
+	}
+
+	//intlen will never be greater than bytelen because it is bytelen >> 2
+	size_t remainder = bytelen - (intlen << 2);
+	size_t charidx = (idx << 2);
+	size_t charend = charidx + remainder;
+	for(; charidx < charend; ++charidx)
+	{
+		if(str[charidx] ^ 0x20)
+		{
+			return &str[charidx];
+		}
+	}
+
+	return 0;
+}
+
+const char* lastnonspace(const char* str, size_t bytelen)
+{
+	unsigned int intlen = bytelen >> 2;
+	unsigned int remainder = bytelen - (intlen << 2);
+
+	if(remainder)
+	{
+		int idx = bytelen - 1;
+		int margin = bytelen - remainder;
+		for(; idx >= margin; --idx)
+		{
+			if(str[idx] ^ 0x20)
+			{
+				return &str[idx];
+			}
+		}
+	}
+	if(intlen)
+	{
+		int idx = intlen - 1;
+		unsigned int* p = (unsigned int*) str;
+		unsigned int maskedval = 0;
+		for(; idx >= 0; --idx)
+		{
+
+			maskedval = p[idx] ^ 0x20202020;
+			if(!maskedval)
+			{
+				continue;
+			}
+			size_t offset = nlz(maskedval) >> 3; //This must remain 3, to convert bits to bytes
+			return &str[(idx << 2) + (3 - offset)];
+		}
+	}
+	//No non-spaces detected
+	return 0;
+}
+
+#endif

@@ -102,7 +102,8 @@ typedef struct reflow_strarray
 } reflow_strarray_t;
 
 static int reflow_strarray_create(reflow_strarray_t* array, size_t initial_size);
-static void reflow_strarray_push(reflow_strarray_t* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
+static void reflow_strarray_push(reflow_strarray_t* array, char* val, size_t vallen,
+				unsigned char bIsEscaped, unsigned char bIsHyphenPoint);
 static void reflow_strarray_destroy(reflow_strarray_t* array);
 
 typedef struct reflow_intstack
@@ -134,7 +135,8 @@ static int reflow_strarray_create(struct reflow_strarray* array, size_t initial_
 	return array->strings ? 0 : -1;
 }
 
-static void reflow_strarray_push(struct reflow_strarray* array, char* val, unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
+static void reflow_strarray_push(struct reflow_strarray* array, char* val, size_t vallen,
+				unsigned char bIsEscaped, unsigned char bIsHyphenPoint)
 {
 	if(array->length >= array->capacity)
 	{
@@ -147,7 +149,7 @@ static void reflow_strarray_push(struct reflow_strarray* array, char* val, unsig
 	pword->bHyphenPoint = bIsHyphenPoint;
 	pword->bEscaped = bIsEscaped;
 	cv_init(&pword->string, 16);
-	cv_appendstr(&pword->string, val);
+	cv_appendstr(&pword->string, val, vallen);
 
 	++array->length;
 }
@@ -275,7 +277,8 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 					isspace(input[offset + wordlen + 1]))
 					spacealignment |= 4;
 
-				reflow_strarray_push(out, rebuilttoken.data, spacealignment, 0);
+				reflow_strarray_push(out, rebuilttoken.data,
+						rebuilttoken.length, spacealignment, 0);
 
 				lastescapetoken =  offset + wordlen;
 			}
@@ -284,12 +287,12 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 
 				SplitWord(ret, wordlen, &a, &b);
 				//By default, the word's cost is its length.
-				reflow_strarray_push(out, a.data, 0, 1);
-				reflow_strarray_push(out, b.data, 0, 0);
+				reflow_strarray_push(out, a.data, a.length, 0, 1);
+				reflow_strarray_push(out, b.data, b.length, 0, 0);
 			}
 			else
 			{
-				reflow_strarray_push(out, ret, 0, 0);
+				reflow_strarray_push(out, ret, wordlen, 0, 0);
 			}
 		}
 	}
@@ -723,7 +726,7 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces, bAllowHyphenation);
 
-		cv_strcat(output, buffer.data);
+		cv_strncat(output, buffer.data, buffer.length);
 	}
 
 	reflow_intstack_destroy(&paragraphbounds);

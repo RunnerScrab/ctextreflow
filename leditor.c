@@ -63,7 +63,6 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 	}
 
 	size_t offset = le->lines[from_idx].start;
-
 	le->lines_count = from_idx;
 
 	while(p && offset < len)
@@ -86,17 +85,23 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 			++le->lines_count;
 			offset = (p - buf) + 1;
 		}
+		else if(!le->lines_count)
+		{
+			//If we found no newlines in the entire buffer
+
+			le->lines[le->lines_count].start = 0;
+			le->lines[le->lines_count].length = len;
+			++le->lines_count;
+		}
+
 	}
 }
 
 void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* data, size_t datalen)
 {
-	struct LexerResult lexresult;
-
 	if(line_idx > le->lines_count)
 	{
 		LineEditor_Append(le, data, datalen);
-		LexerResult_Destroy(&lexresult);
 		return;
 	}
 
@@ -109,6 +114,30 @@ void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* dat
 	memset(copystart, 0, copylen);
 	LineEditor_Append(le, data, datalen);
 	LineEditor_Append(le, temp, copylen);
+	LineEditor_RebuildLineIndices(le, line_idx);
+
+	tfree(temp);
+}
+
+void LineEditor_DeleteLine(struct LineEditor* le, size_t line_idx)
+{
+
+	if(line_idx > le->lines_count)
+	{
+		return;
+	}
+
+	size_t startidx = le->lines[line_idx].start + le->lines[line_idx].length + 1;
+
+	el_t* copystart = &le->buffer.data[startidx];
+	size_t copylen = le->buffer.length - startidx;
+	el_t* temp = talloc(copylen);
+
+	memcpy(temp, copystart, copylen);
+
+	memset(copystart, 0, copylen);
+	memcpy(&le->buffer.data[le->lines[line_idx].start], temp, copylen);
+
 	LineEditor_RebuildLineIndices(le, line_idx);
 
 	tfree(temp);
@@ -128,7 +157,8 @@ int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr)
 
 int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 {
-	printf("Print called.\n");
+	printf("Print called.\n--RAW--\n");
+	printf("%s\n--END RAW--\n", pLE->buffer.data);
 	size_t idx = 0;
 	size_t linebuf_reserved = 512;
 	char* linebuf = talloc(linebuf_reserved);
@@ -176,6 +206,7 @@ int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr)
 	cv_init(&out, pLE->buffer.length);
 	ReflowText(pLE->buffer.data, pLE->buffer.length, &out, &rfparams);
 	cv_swap(&pLE->buffer, &out);
+
 	LineEditor_RebuildLineIndices(pLE, 0);
 	cv_destroy(&out);
 	return 0;
@@ -191,20 +222,10 @@ int EditorCmdDelete(struct LineEditor* pLE, struct LexerResult* plr)
 	}
 
 	char* pos_str = LexerResult_GetTokenAt(plr, 1);
-	size_t insert_idx = atoi(pos_str);
-	printf("Delete idx was %lu, parsed from '%s'\n", insert_idx, pos_str);
+	size_t delete_idx = atoi(pos_str);
+	printf("Delete idx was %lu, parsed from '%s'\n", delete_idx, pos_str);
 
-	if(tokencount > 2)
-	{
-		char* insertstr = LexerResult_GetStringAfterToken(plr, 2);
-		size_t insertstr_len = strlen(insertstr);
-		char* temp = malloc(insertstr_len + 2);
-		memset(temp, 0, insertstr_len + 2);
-		snprintf(temp, insertstr_len + 2, "%s\n", insertstr);
-		printf("Performing insert of '%s'.\n", temp);
-		LineEditor_InsertAt(pLE, insert_idx, temp, insertstr_len + 2);
-		free(temp);
-	}
+	LineEditor_DeleteLine(pLE, delete_idx);
 	return 0;
 }
 

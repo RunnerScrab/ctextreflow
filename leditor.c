@@ -72,8 +72,10 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 		{
 			if(le->lines_count >= le->lines_reserved)
 			{
+				size_t oldsize = le->lines_reserved;
 				le->lines_reserved <<= 1;
 				le->lines = trealloc(le->lines, sizeof(struct TextLine) * le->lines_reserved);
+				memset(&le->lines[oldsize], 0, sizeof(struct TextLine) * (le->lines_reserved - oldsize));
 			}
 
 			le->lines[le->lines_count].start = (0 == le->lines_count) ? 0 :
@@ -205,7 +207,7 @@ int main(void)
 
 	LineEditor_Init(&editor);
 
-	const size_t linelimit = 256; //A hard limit we impose on the user
+	const size_t linelimit = 1024; //A hard limit we impose on the user
 	size_t linelen = 256; //A flexible limit used by getline()
 
 	char* buf = talloc(linelimit);
@@ -220,7 +222,7 @@ int main(void)
 
 		if(bread >= 0)
 		{
-
+/*
 			if(bread > linelimit)
 			{
 				printf("Input exceeds buffer limit.\n");
@@ -228,7 +230,7 @@ int main(void)
 				memset(buf, 0, linelimit);
 				continue;
 			}
-
+*/
 			if(buf[0] == '.')
 			{
 				buf[bread - 1] = 0;
@@ -249,7 +251,7 @@ int main(void)
  			}
 			else
 			{
-				LineEditor_Append(&editor, buf, strnlen(buf, 256));
+				LineEditor_Append(&editor, buf, bread);
 			}
 		}
 		else

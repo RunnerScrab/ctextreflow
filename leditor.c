@@ -90,7 +90,6 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 
 void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* data, size_t datalen)
 {
-
 	struct LexerResult lexresult;
 
 	if(line_idx > le->lines_count)
@@ -108,9 +107,8 @@ void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* dat
 	memcpy(temp, copystart, copylen);
 	memset(copystart, 0, copylen);
 	LineEditor_Append(le, data, datalen);
-	LineEditor_Append(le, temp, copylen + 1);
+	LineEditor_Append(le, temp, copylen);
 	LineEditor_RebuildLineIndices(le, line_idx);
-
 
 	tfree(temp);
 }

@@ -142,7 +142,7 @@ int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 		}
 		linebuf[linelen] = 0;
 		memcpy(linebuf, &pLE->buffer.data[pLE->lines[idx].start], linelen);
-		printf("%02lu]%s\n", idx, linebuf);
+		printf("%02lu] %s\n", idx, linebuf);
 	}
 	tfree(linebuf);
 	return 0;
@@ -181,6 +181,33 @@ int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr)
 	return 0;
 }
 
+int EditorCmdDelete(struct LineEditor* pLE, struct LexerResult* plr)
+{
+	size_t tokencount = LexerResult_GetTokenCount(plr);
+	if(tokencount < 2)
+	{
+		printf("*Too few arguments.\n");
+		return 0;
+	}
+
+	char* pos_str = LexerResult_GetTokenAt(plr, 1);
+	size_t insert_idx = atoi(pos_str);
+	printf("Delete idx was %lu, parsed from '%s'\n", insert_idx, pos_str);
+
+	if(tokencount > 2)
+	{
+		char* insertstr = LexerResult_GetStringAfterToken(plr, 2);
+		size_t insertstr_len = strlen(insertstr);
+		char* temp = malloc(insertstr_len + 2);
+		memset(temp, 0, insertstr_len + 2);
+		snprintf(temp, insertstr_len + 2, "%s\n", insertstr);
+		printf("Performing insert of '%s'.\n", temp);
+		LineEditor_InsertAt(pLE, insert_idx, temp, insertstr_len + 2);
+		free(temp);
+	}
+	return 0;
+}
+
 int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	size_t tokencount = LexerResult_GetTokenCount(plr);
@@ -215,6 +242,7 @@ int main(void)
 
 	struct EditorCommand commands[] =
 		{
+			{".d", EditorCmdDelete},
 			{".f", EditorCmdFormat},
 			{".i", EditorCmdInsert},
 			{".p", EditorCmdPrint},
@@ -240,7 +268,6 @@ int main(void)
 
 		if(bread >= 0)
 		{
-
 			if(bread > linelimit)
 			{
 				printf("Input exceeds buffer limit.\n");
@@ -258,7 +285,9 @@ int main(void)
 				char* cmdstr = LexerResult_GetTokenAt(&lexresult, 0);
 				printf("cmdstr is '%s'\n", cmdstr);
 				struct EditorCommand* pCmd = (struct EditorCommand*)
-					bsearch(cmdstr, commands, sizeof(commands)/sizeof(struct EditorCommand), sizeof(struct EditorCommand),
+					bsearch(cmdstr, commands,
+						sizeof(commands)/sizeof(struct EditorCommand),
+						sizeof(struct EditorCommand),
 						EditorCmdCmp);
 
 				if(pCmd && pCmd->cmdfp(&editor, &lexresult) < 0)

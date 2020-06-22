@@ -382,7 +382,7 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 
 			cv_strncat(output, pword->string.data, pword->string.length);
 		}
-		if(words->strings[idx - 1].bHyphenPoint)
+		if(((idx - 1) < words->length) && words->strings[idx - 1].bHyphenPoint)
 		{
 			cv_strncat(output, "-", 2);
 		}
@@ -411,12 +411,14 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 
 	TokenizeString((char*) text, len, &words, bAllowHyphenation);
 
-	if(bIndentFirstWord)
+	if(bIndentFirstWord && words.strings[0].string.length)
 	{
 		cv_t spaced;
+		printf("words.strings[0].string.length: %d\n", words.strings[0].string.length);
 		cv_init(&spaced, words.strings[0].string.length + 2);
 		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].string.data);
-		cv_swap(&spaced, &words.strings[0].string);
+		cv_swap(&spaced, &(words.strings[0].string));
+
 		cv_destroy(&spaced);
 	}
 

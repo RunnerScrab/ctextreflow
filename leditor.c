@@ -102,8 +102,9 @@ void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* dat
 
 	size_t startidx = le->lines[line_idx].start;
 	el_t* copystart = &le->buffer.data[startidx];
-	size_t copylen = le->buffer.length - startidx + 1;
-	el_t* temp = talloc(copylen + 1);
+	size_t copylen = le->buffer.length - startidx;
+	el_t* temp = talloc(copylen);
+
 	memcpy(temp, copystart, copylen);
 	memset(copystart, 0, copylen);
 	LineEditor_Append(le, data, datalen);
@@ -207,7 +208,7 @@ int main(void)
 
 	LineEditor_Init(&editor);
 
-	const size_t linelimit = 1024; //A hard limit we impose on the user
+	const size_t linelimit = 4096; //A hard limit we impose on the user
 	size_t linelen = 256; //A flexible limit used by getline()
 
 	char* buf = talloc(linelimit);
@@ -222,7 +223,7 @@ int main(void)
 
 		if(bread >= 0)
 		{
-/*
+
 			if(bread > linelimit)
 			{
 				printf("Input exceeds buffer limit.\n");
@@ -230,7 +231,7 @@ int main(void)
 				memset(buf, 0, linelimit);
 				continue;
 			}
-*/
+
 			if(buf[0] == '.')
 			{
 				buf[bread - 1] = 0;

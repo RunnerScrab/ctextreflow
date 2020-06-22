@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include "talloc.h"
 #include "charvector.h"
+#include "cmdlexer.h"
 
 char* strnstr(const char*, const char*, size_t);
 
@@ -19,16 +20,6 @@ struct LineEditor
 	size_t lines_reserved;
 	size_t lines_count;
 
-/*
-  Implement a simple gap buffer.
-  Line endings are known after every insertion, except after a reflow.
-  After a reflow, recalculation is performed.
-
-  Insertions go at the end by default and always are one line regardless of
-  length.
-
-
-*/
 };
 
 int LineEditor_Init(struct LineEditor* le)
@@ -53,11 +44,12 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx);
 void LineEditor_Append(struct LineEditor* le, const char* data, size_t datalen)
 {
 	cv_appendstr(&le->buffer, data, datalen);
-	LineEditor_RebuildLineIndices(le, le->lines_count);
+	LineEditor_RebuildLineIndices(le, (le->lines_count > 1) ? (le->lines_count - 1) : 0);
 }
 
 void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 {
+	printf("Rebuilding from line %lu\n", from_idx);
 	const char* buf = le->buffer.data;
 	size_t len = le->buffer.length;
 
@@ -73,7 +65,7 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 
 	le->lines_count = from_idx;
 
-	while(p)
+	while(p && offset < len)
 	{
 		p = memchr(buf + offset, '\n', len - offset);
 		if(p)
@@ -97,9 +89,12 @@ void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx)
 void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* data, size_t datalen)
 {
 
+	struct LexerResult lexresult;
+
 	if(line_idx > le->lines_count)
 	{
 		LineEditor_Append(le, data, datalen);
+		LexerResult_Destroy(&lexresult);
 		return;
 	}
 
@@ -113,24 +108,25 @@ void LineEditor_InsertAt(struct LineEditor* le, size_t line_idx, const char* dat
 	LineEditor_Append(le, temp, copylen + 1);
 	LineEditor_RebuildLineIndices(le, line_idx);
 
+
 	tfree(temp);
 }
 
 struct EditorCommand
 {
 	const char* name;
-	int (*cmdfp)(struct LineEditor*, const char*, size_t);
+	int (*cmdfp)(struct LineEditor*, struct LexerResult*);
 };
 
 
-int EditorCmdQuit(struct LineEditor* pLE, const char* line, size_t linelen)
+int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	return -1;
 }
 
-int EditorCmdPrint(struct LineEditor* pLE, const char* line, size_t linelen)
+int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 {
-	//("%s\n", pLE->buffer.data);
+	printf("Print called.\n");
 	size_t idx = 0;
 	size_t linebuf_reserved = 512;
 	char* linebuf = talloc(linebuf_reserved);
@@ -150,7 +146,7 @@ int EditorCmdPrint(struct LineEditor* pLE, const char* line, size_t linelen)
 	return 0;
 }
 
-int EditorCmdRebuildLines(struct LineEditor* pLE, const char* line, size_t linelen)
+int EditorCmdRebuildLines(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	LineEditor_RebuildLineIndices(pLE, 0);
 	size_t idx = 0;
@@ -166,18 +162,34 @@ int EditorCmdCmp(const void* pA, const void* pB)
 	return strcmp((const char*) pA, pCmd->name);
 }
 
-int EditorCmdInsert(struct LineEditor* pLE, const char* line, size_t linelen)
+int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 {
-	const char* teststr = "test of insertion\n";
-	LineEditor_InsertAt(pLE, 0, teststr, strlen(teststr));
+	size_t tokencount = LexerResult_GetTokenCount(plr);
+	if(tokencount < 2)
+	{
+		printf("*Too few arguments.\n");
+		return 0;
+	}
+
+	char* pos_str = LexerResult_GetTokenAt(plr, 1);
+	size_t insert_idx = atoi(pos_str);
+	printf("Insert idx was %lu, parsed from '%s'\n", insert_idx, pos_str);
+
+	if(tokencount > 2)
+	{
+
+		char* insertstr = LexerResult_GetStringAfterToken(plr, 2);
+		size_t insertstr_len = strlen(insertstr);
+		char* temp = malloc(insertstr_len + 2);
+		memset(temp, 0, insertstr_len + 2);
+		strncat(temp, insertstr, insertstr_len + 2);
+		strncat(temp, "\n", insertstr_len + 2);
+		printf("Performing insert of '%s'.\n", temp);
+		LineEditor_InsertAt(pLE, insert_idx, temp, insertstr_len + 2);
+		free(temp);
+	}
 	return 0;
 }
-
-void Lexer_LexString(const char* str)
-{
-
-}
-
 
 int main(void)
 {
@@ -185,10 +197,10 @@ int main(void)
 
 	struct EditorCommand commands[] =
 		{
-			{"i", EditorCmdInsert},
-			{"p", EditorCmdPrint},
-			{"q", EditorCmdQuit},
-			{"r", EditorCmdRebuildLines}
+			{".i", EditorCmdInsert},
+			{".p", EditorCmdPrint},
+			{".q", EditorCmdQuit},
+			{".r", EditorCmdRebuildLines}
 		};
 
 
@@ -199,11 +211,12 @@ int main(void)
 
 	char* buf = talloc(linelimit);
 	memset(buf, 0, linelimit);
-
+	struct LexerResult lexresult;
+	LexerResult_Prepare(&lexresult);
 	for(;;)
 	{
-
 		ssize_t bread = getline(&buf, &linelen, stdin);
+
 		buf[bread] = 0;
 
 		if(bread >= 0)
@@ -219,17 +232,17 @@ int main(void)
 
 			if(buf[0] == '.')
 			{
-				char* pNL = memchr(buf, '\n', linelimit);
-				char cmdstr[256] = {0};
-				if(pNL)
-				{
-					memcpy(cmdstr, buf + 1, pNL - buf - 1);
-				}
+				buf[bread - 1] = 0;
+				LexerResult_Clear(&lexresult);
+				LexerResult_LexString(&lexresult, buf, bread);
+
+				char* cmdstr = LexerResult_GetTokenAt(&lexresult, 0);
+				printf("cmdstr is '%s'\n", cmdstr);
 				struct EditorCommand* pCmd = (struct EditorCommand*)
 					bsearch(cmdstr, commands, 4, sizeof(struct EditorCommand),
 						EditorCmdCmp);
 
-				if(pCmd && pCmd->cmdfp(&editor, &buf[1], bread - 1) < 0)
+				if(pCmd && pCmd->cmdfp(&editor, &lexresult) < 0)
 				{
 					printf("*Quitting\n");
 					break;
@@ -248,5 +261,6 @@ int main(void)
 	}
 	tfree(buf);
 	LineEditor_Destroy(&editor);
+	LexerResult_Destroy(&lexresult);
 	return 0;
 }

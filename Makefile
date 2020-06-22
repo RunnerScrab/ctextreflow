@@ -1,9 +1,9 @@
 CC = gcc
 CFLAGS = -Wall -Og -g
 LDFLAGS = -Og -lbsd -g
-OBJ = charvector.o talloc.o textutil.o bitutils.o utf8.o
+OBJ = charvector.o talloc.o textutil.o bitutils.o utf8.o cmdlexer.o
 
-wraptest2: wraptest2.o charvector.o talloc.o textutil.o bitutils.o utf8.o
+wraptest2: wraptest2.o ${OBJ}
 
 leditor: ${OBJ} leditor.o
 

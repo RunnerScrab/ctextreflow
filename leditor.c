@@ -182,8 +182,7 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 		size_t insertstr_len = strlen(insertstr);
 		char* temp = malloc(insertstr_len + 2);
 		memset(temp, 0, insertstr_len + 2);
-		strncat(temp, insertstr, insertstr_len + 2);
-		strncat(temp, "\n", insertstr_len + 2);
+		snprintf(temp, insertstr_len + 2, "%s\n", insertstr);
 		printf("Performing insert of '%s'.\n", temp);
 		LineEditor_InsertAt(pLE, insert_idx, temp, insertstr_len + 2);
 		free(temp);

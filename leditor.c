@@ -4,6 +4,7 @@
 #include "talloc.h"
 #include "charvector.h"
 #include "cmdlexer.h"
+#include "textutil.h"
 
 char* strnstr(const char*, const char*, size_t);
 
@@ -163,6 +164,23 @@ int EditorCmdCmp(const void* pA, const void* pB)
 	return strcmp((const char*) pA, pCmd->name);
 }
 
+int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr)
+{
+	cv_t out;
+	struct ReflowParameters rfparams;
+
+	rfparams.num_indent_spaces = 2;
+	rfparams.line_width = 80;
+	rfparams.bAllowHyphenation = 1;
+
+	cv_init(&out, pLE->buffer.length);
+	ReflowText(pLE->buffer.data, pLE->buffer.length, &out, &rfparams);
+	cv_swap(&pLE->buffer, &out);
+	LineEditor_RebuildLineIndices(pLE, 0);
+	cv_destroy(&out);
+	return 0;
+}
+
 int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	size_t tokencount = LexerResult_GetTokenCount(plr);
@@ -197,6 +215,7 @@ int main(void)
 
 	struct EditorCommand commands[] =
 		{
+			{".f", EditorCmdFormat},
 			{".i", EditorCmdInsert},
 			{".p", EditorCmdPrint},
 			{".q", EditorCmdQuit},
@@ -239,7 +258,7 @@ int main(void)
 				char* cmdstr = LexerResult_GetTokenAt(&lexresult, 0);
 				printf("cmdstr is '%s'\n", cmdstr);
 				struct EditorCommand* pCmd = (struct EditorCommand*)
-					bsearch(cmdstr, commands, 4, sizeof(struct EditorCommand),
+					bsearch(cmdstr, commands, sizeof(commands)/sizeof(struct EditorCommand), sizeof(struct EditorCommand),
 						EditorCmdCmp);
 
 				if(pCmd && pCmd->cmdfp(&editor, &lexresult) < 0)

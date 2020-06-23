@@ -383,7 +383,7 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 
 			cv_strncat(output, pword->string.data, pword->string.length);
 		}
-		if(words->strings[idx - 1].bHyphenPoint)
+		if((idx - 1) < words->length && words->strings[idx - 1].bHyphenPoint)
 		{
 			cv_strncat(output, "-", 2);
 		}

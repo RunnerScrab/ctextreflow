@@ -1,44 +1,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "leditor.h"
 #include "talloc.h"
 #include "charvector.h"
 #include "cmdlexer.h"
 #include "textutil.h"
-
-char* strnstr(const char*, const char*, size_t);
-
-struct TextLine
-{
-	size_t start, length;
-};
-
-struct LineEditor
-{
-	cv_t buffer;
-
-	struct TextLine* lines;
-	size_t lines_reserved;
-	size_t lines_count;
-	unsigned char bSaveResult;
-};
-
-int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdDelete(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdSave(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdClear(struct LineEditor* pLE, struct LexerResult* plr);
-int EditorCmdHelp(struct LineEditor* pLE, struct LexerResult* plr);
-
-struct EditorCommand
-{
-	const char* name;
-	const char* usage;
-	const char* desc;
-	int (*cmdfp)(struct LineEditor*, struct LexerResult*);
-};
 
 struct EditorCommand g_editor_commands[] =
 {
@@ -55,6 +22,8 @@ struct EditorCommand g_editor_commands[] =
 
 int LineEditor_Init(struct LineEditor* le)
 {
+	LexerResult_Prepare(&le->lexresult);
+
 	le->bSaveResult = 0;
 	cv_init(&le->buffer, 512);
 	le->lines_reserved = 128;
@@ -69,6 +38,8 @@ void LineEditor_Destroy(struct LineEditor* le)
 {
 	tfree(le->lines);
 	cv_destroy(&le->buffer);
+
+	LexerResult_Destroy(&le->lexresult);
 }
 
 void LineEditor_RebuildLineIndices(struct LineEditor* le, size_t from_idx);
@@ -174,12 +145,6 @@ void LineEditor_DeleteLine(struct LineEditor* le, size_t line_idx)
 	tfree(temp);
 }
 
-int EditorCmdCmp(const void* pA, const void* pB)
-{
-	struct EditorCommand* pCmd = ((struct EditorCommand*) pB);
-	return strcmp((const char*) pA, pCmd->name);
-}
-
 int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	if(pLE->buffer.length)
@@ -187,6 +152,8 @@ int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 		size_t idx = 0;
 		size_t linebuf_reserved = 512;
 		char* linebuf = talloc(linebuf_reserved);
+		memset(linebuf, 0, linebuf_reserved);
+
 		for(; idx < pLE->lines_count; ++idx)
 		{
 			size_t linelen = pLE->lines[idx].length;
@@ -205,6 +172,7 @@ int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 	{
 		printf("Buffer is empty.\n");
 	}
+
 	return 0;
 }
 
@@ -290,10 +258,11 @@ int EditorCmdClear(struct LineEditor* pLE, struct LexerResult* plr)
 	return 0;
 }
 
+
 int EditorCmdHelp(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	size_t idx = 0;
-	size_t len = sizeof(g_editor_commands)/sizeof(struct EditorCommand);
+	size_t len = 8;
 	printf("%20s   %-20s\n", "Command/Usage", "Description");
 	printf("-----------------------------------------------------\n");
 	for(; idx < len; ++idx)
@@ -304,77 +273,40 @@ int EditorCmdHelp(struct LineEditor* pLE, struct LexerResult* plr)
 	return 0;
 }
 
-int main(void)
+int EditorCmdCmp(const void* pA, const void* pB)
 {
-	struct LineEditor editor;
+	struct EditorCommand* pCmd = ((struct EditorCommand*) pB);
+	return strcmp((const char*) pA, pCmd->name);
+}
 
-	LineEditor_Init(&editor);
-
-	const size_t linelimit = 4096; //A hard limit we impose on the user
-	size_t linelen = 256; //A flexible limit used by getline()
-
-	char* buf = talloc(linelimit);
-	memset(buf, 0, linelimit);
-	struct LexerResult lexresult;
-	LexerResult_Prepare(&lexresult);
-	for(;;)
+int LineEditor_ProcessInput(struct LineEditor* ple, const char* input, size_t len)
+{
+	if('.' == input[0])
 	{
-		printf("%02lu>", editor.lines_count);
-		ssize_t bread = getline(&buf, &linelen, stdin);
+		LexerResult_Clear(&ple->lexresult);
+		LexerResult_LexString(&ple->lexresult, input, len);
 
-		buf[bread] = 0;
+		char* cmdstr = LexerResult_GetTokenAt(&ple->lexresult, 0);
 
-		if(bread >= 0)
+		struct EditorCommand* pCmd = (struct EditorCommand*)
+			bsearch(cmdstr, g_editor_commands,
+				8,
+				sizeof(struct EditorCommand),
+				EditorCmdCmp);
+		if(pCmd)
 		{
-			if(bread > linelimit)
-			{
-				printf("Input exceeds buffer limit.\n");
-				buf = trealloc(buf, linelimit);
-				memset(buf, 0, linelimit);
-				continue;
-			}
-
-			if(buf[0] == '.')
-			{
-				buf[bread - 1] = 0;
-				LexerResult_Clear(&lexresult);
-				LexerResult_LexString(&lexresult, buf, bread);
-
-				char* cmdstr = LexerResult_GetTokenAt(&lexresult, 0);
-
-				struct EditorCommand* pCmd = (struct EditorCommand*)
-					bsearch(cmdstr, g_editor_commands,
-						sizeof(g_editor_commands)/sizeof(struct EditorCommand),
-						sizeof(struct EditorCommand),
-						EditorCmdCmp);
-
-				if(pCmd && pCmd->cmdfp(&editor, &lexresult) < 0)
-				{
-					printf("*Quitting\n");
-					break;
-				}
- 			}
-			else
-			{
-				LineEditor_Append(&editor, buf, bread);
-			}
+			return pCmd->cmdfp(ple, &ple->lexresult);
 		}
 		else
 		{
-			printf("Getline failure.\n");
-			break;
+			printf("*Unrecognized command.\n");
+			return 0;
 		}
 	}
-
-	if(editor.bSaveResult)
+	else
 	{
-		printf("Saving result:\n%s",
-			editor.buffer.data);
+		LineEditor_Append(ple, input, len);
+		return 0;
 	}
-
-
-	tfree(buf);
-	LineEditor_Destroy(&editor);
-	LexerResult_Destroy(&lexresult);
 	return 0;
 }

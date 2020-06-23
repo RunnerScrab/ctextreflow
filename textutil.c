@@ -14,6 +14,14 @@
 //ADTs which are likely not going to be reused because they contain specific
 //types. In C, we don't have templates/generics and must hand write every
 //specialization.
+void PrintBuffer(const char* data, size_t len)
+{
+	size_t idx = 0;
+	for(; idx < len; ++idx)
+	{
+		printf(idx < len - 1 ? "%d," : "%d\n", data[idx]);
+	}
+}
 
 typedef struct intpair
 {
@@ -376,7 +384,7 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 				}
 				else if(!words->strings[idx + 1].bEscaped)
 				{
-					cv_strncat(&pword->string, " ", 2);
+					cv_strncat(&pword->string, " ", 1);
 				}
 			}
 
@@ -384,9 +392,9 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 		}
 		if(((idx - 1) < words->length) && words->strings[idx - 1].bHyphenPoint)
 		{
-			cv_strncat(output, "-", 2);
+			cv_strncat(output, "-", 1);
 		}
-		cv_strncat(output, "\n", 2);
+		cv_strncat(output, "\n", 1);
 
 		i = j;
 	}
@@ -718,6 +726,7 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
 
+	PrintBuffer(nlstrippedbuf, len);
 	size_t idx = 0;
 	for(; idx < paragraphbounds.length; idx += 2)
 	{
@@ -726,11 +735,11 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 		cv_clear(&buffer);
 
-		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces, bAllowHyphenation);
+		rpfn(&nlstrippedbuf[start], end - start, width, &buffer, num_indent_spaces, bAllowHyphenation);
 
 		cv_strncat(output, buffer.data, buffer.length);
 	}
-
+	PrintBuffer(output->data, output->length);
 	reflow_intstack_destroy(&paragraphbounds);
 	cv_destroy(&buffer);
 	free(nlstrippedbuf);

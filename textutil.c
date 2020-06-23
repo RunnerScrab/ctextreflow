@@ -4,6 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include "bitutils.h"
 #include "utf8.h"
 #include "charvector.h"
 
@@ -242,7 +243,7 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 	char* savep = 0;
 	char* ret = 0;
 	char* inputcopy = (char*) malloc(sizeof(char) * (len +1));
-	memcpy(inputcopy, input, sizeof(char) * (len));
+	memcpy(inputcopy, input, sizeof(char) * (len + 1));
 	inputcopy[len] = 0;
 	size_t offset = 0, lastescapetoken = 0, wordlen = 0;
 	unsigned char spacealignment = 0;
@@ -412,6 +413,17 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 	if(len <= width)
 	{
 		cv_strncat(output, text, len);
+		const char* p = lastnonspace(output->data,
+					strnlen(output->data, output->length));
+		if(p)
+		{
+			size_t offset = (p - output->data) + 1;
+			if(offset < output->length)
+			{
+				printf("Chopping a '%c' off.\n", output->data[offset]);
+				output->data[offset] = '\n';
+			}
+		}
 		return;
 	}
 	reflow_strarray_t words;
@@ -422,7 +434,6 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 	if(bIndentFirstWord && words.strings[0].string.length)
 	{
 		cv_t spaced;
-		printf("words.strings[0].string.length: %d\n", words.strings[0].string.length);
 		cv_init(&spaced, words.strings[0].string.length + 2);
 		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].string.data);
 		cv_swap(&spaced, &(words.strings[0].string));
@@ -714,9 +725,9 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 				const int width, unsigned char num_indent_spaces,
 				unsigned char bAllowHyphenation, ReflowParagraphFn rpfn)
 {
-	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len));
-	memset(nlstrippedbuf, 0, sizeof(char) * (len));
-	StripNewline(input, len, nlstrippedbuf, len);
+	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
+	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
+	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
 
 	reflow_intstack_t paragraphbounds;
 	reflow_intstack_create(&paragraphbounds, 8);

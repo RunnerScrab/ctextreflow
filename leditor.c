@@ -205,6 +205,7 @@ int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr)
 
 	cv_init(&out, pLE->buffer.length);
 	ReflowText(pLE->buffer.data, pLE->buffer.length, &out, &rfparams);
+
 	cv_swap(&pLE->buffer, &out);
 
 	LineEditor_RebuildLineIndices(pLE, 0);

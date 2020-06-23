@@ -157,8 +157,8 @@ int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr)
 
 int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 {
-	printf("Print called.\n--RAW--\n");
-	printf("%s\n--END RAW--\n", pLE->buffer.data);
+	if(pLE->buffer.length)
+	{
 	size_t idx = 0;
 	size_t linebuf_reserved = 512;
 	char* linebuf = talloc(linebuf_reserved);
@@ -175,6 +175,11 @@ int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 		printf("%02lu] %s\n", idx, linebuf);
 	}
 	tfree(linebuf);
+	}
+	else
+	{
+		printf("Buffer is empty.\n");
+	}
 	return 0;
 }
 
@@ -245,7 +250,6 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 
 	if(tokencount > 2)
 	{
-
 		char* insertstr = LexerResult_GetStringAfterToken(plr, 2);
 		size_t insertstr_len = strlen(insertstr);
 		char* temp = malloc(insertstr_len + 2);
@@ -258,12 +262,20 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 	return 0;
 }
 
+int EditorCmdClear(struct LineEditor* pLE, struct LexerResult* plr)
+{
+	cv_clear(&pLE->buffer);
+	LineEditor_RebuildLineIndices(pLE, 0);
+	return 0;
+}
+
 int main(void)
 {
 	struct LineEditor editor;
 
 	struct EditorCommand commands[] =
 		{
+			{".c", EditorCmdClear},
 			{".d", EditorCmdDelete},
 			{".f", EditorCmdFormat},
 			{".i", EditorCmdInsert},

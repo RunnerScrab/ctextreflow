@@ -4,7 +4,6 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include "bitutils.h"
 #include "utf8.h"
 #include "charvector.h"
 
@@ -15,14 +14,6 @@
 //ADTs which are likely not going to be reused because they contain specific
 //types. In C, we don't have templates/generics and must hand write every
 //specialization.
-void PrintBuffer(const char* data, size_t len)
-{
-	size_t idx = 0;
-	for(; idx < len; ++idx)
-	{
-		printf(idx < len - 1 ? "%d," : "%d\n", data[idx]);
-	}
-}
 
 typedef struct intpair
 {
@@ -243,7 +234,7 @@ static void TokenizeString(const char* input, size_t len, reflow_strarray_t* out
 	char* savep = 0;
 	char* ret = 0;
 	char* inputcopy = (char*) malloc(sizeof(char) * (len +1));
-	memcpy(inputcopy, input, sizeof(char) * (len + 1));
+	memcpy(inputcopy, input, sizeof(char) * (len));
 	inputcopy[len] = 0;
 	size_t offset = 0, lastescapetoken = 0, wordlen = 0;
 	unsigned char spacealignment = 0;
@@ -385,17 +376,17 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 				}
 				else if(!words->strings[idx + 1].bEscaped)
 				{
-					cv_strncat(&pword->string, " ", 1);
+					cv_strncat(&pword->string, " ", 2);
 				}
 			}
 
 			cv_strncat(output, pword->string.data, pword->string.length);
 		}
-		if(((idx - 1) < words->length) && words->strings[idx - 1].bHyphenPoint)
+		if(words->strings[idx - 1].bHyphenPoint)
 		{
-			cv_strncat(output, "-", 1);
+			cv_strncat(output, "-", 2);
 		}
-		cv_strncat(output, "\n", 1);
+		cv_strncat(output, "\n", 2);
 
 		i = j;
 	}
@@ -407,23 +398,12 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 }
 
 static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord,
-			unsigned char bAllowHyphenation)
+	unsigned char bAllowHyphenation)
 {
 	//Uses a shortest paths method to solve optimization problem
 	if(len <= width)
 	{
 		cv_strncat(output, text, len);
-		const char* p = lastnonspace(output->data,
-					strnlen(output->data, output->length));
-		if(p)
-		{
-			size_t offset = (p - output->data) + 1;
-			if(offset < output->length)
-			{
-				printf("Chopping a '%c' off.\n", output->data[offset]);
-				output->data[offset] = '\n';
-			}
-		}
 		return;
 	}
 	reflow_strarray_t words;
@@ -431,13 +411,12 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 
 	TokenizeString((char*) text, len, &words, bAllowHyphenation);
 
-	if(bIndentFirstWord && words.strings[0].string.length)
+	if(bIndentFirstWord)
 	{
 		cv_t spaced;
 		cv_init(&spaced, words.strings[0].string.length + 2);
 		cv_sprintf(&spaced, "%*s%s", bIndentFirstWord, "", words.strings[0].string.data);
-		cv_swap(&spaced, &(words.strings[0].string));
-
+		cv_swap(&spaced, &words.strings[0].string);
 		cv_destroy(&spaced);
 	}
 
@@ -737,7 +716,6 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 	FindParagraphs(nlstrippedbuf, len, &paragraphbounds);
 
-	PrintBuffer(nlstrippedbuf, len);
 	size_t idx = 0;
 	for(; idx < paragraphbounds.length; idx += 2)
 	{
@@ -746,14 +724,11 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 
 		cv_clear(&buffer);
 
-		rpfn(&nlstrippedbuf[start], end - start, width, &buffer, num_indent_spaces, bAllowHyphenation);
+		rpfn(&nlstrippedbuf[start], end - start + 1, width, &buffer, num_indent_spaces, bAllowHyphenation);
 
 		cv_strncat(output, buffer.data, buffer.length);
-
 	}
-	output->length = strlen(output->data) + 1;
 
-	PrintBuffer(output->data, output->length);
 	reflow_intstack_destroy(&paragraphbounds);
 	cv_destroy(&buffer);
 	free(nlstrippedbuf);

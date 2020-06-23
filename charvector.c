@@ -99,7 +99,6 @@ void cv_swap(cv_t *a, cv_t *b)
 	b->data = temp.data;
 	b->length = temp.length;
 	b->capacity = temp.capacity;
-	memset(&temp, 0, sizeof(cv_t));
 }
 
 void cv_copy(cv_t *dest, cv_t *source)
@@ -125,7 +124,7 @@ void cv_strncpy(cv_t *dest, const el_t *source, size_t len)
 void cv_strncat(cv_t *dest, const el_t *source, size_t len)
 {
 	// To account for the null byte, the length must have 1 added to it and dest->length must have 1 subtracted
-	size_t new_len = dest->length + len;
+	size_t new_len = dest->length + len + 1;
 	if (new_len >= dest->capacity)
 	{
 		size_t oldcap = dest->capacity;
@@ -135,7 +134,7 @@ void cv_strncat(cv_t *dest, const el_t *source, size_t len)
 		memset(&dest->data[oldcap], 0, dest->capacity - oldcap);
 	}
 	dest->length = new_len;
-	strncat(dest->data, source, dest->length);
+	strncat(dest->data, source, len);
 }
 
 void cv_destroy(cv_t *cv)

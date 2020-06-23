@@ -3,9 +3,11 @@ CFLAGS = -Wall -Og -g
 LDFLAGS = -Og -lbsd -g
 OBJ = charvector.o talloc.o textutil.o bitutils.o utf8.o cmdlexer.o
 
+leditor: ${OBJ} leditor.o
+
 wraptest2: wraptest2.o ${OBJ}
 
-leditor: ${OBJ} leditor.o
+
 
 
 %.o: %.c

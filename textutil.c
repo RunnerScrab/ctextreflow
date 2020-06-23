@@ -406,7 +406,7 @@ static inline void PerformReflow(const reflow_strarray_t* words, const int* brea
 }
 
 static void ReflowParagraph(const char* text, size_t len, const int width, cv_t* output, unsigned char bIndentFirstWord,
-	unsigned char bAllowHyphenation)
+			unsigned char bAllowHyphenation)
 {
 	//Uses a shortest paths method to solve optimization problem
 	if(len <= width)
@@ -714,9 +714,9 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 				const int width, unsigned char num_indent_spaces,
 				unsigned char bAllowHyphenation, ReflowParagraphFn rpfn)
 {
-	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len + 1));
-	memset(nlstrippedbuf, 0, sizeof(char) * (len + 1));
-	StripNewline(input, len + 1, nlstrippedbuf, len + 1);
+	char* nlstrippedbuf = (char*) malloc(sizeof(char) * (len));
+	memset(nlstrippedbuf, 0, sizeof(char) * (len));
+	StripNewline(input, len, nlstrippedbuf, len);
 
 	reflow_intstack_t paragraphbounds;
 	reflow_intstack_create(&paragraphbounds, 8);
@@ -738,7 +738,10 @@ static inline void ReflowTextImpl(const char* input, const size_t len, cv_t* out
 		rpfn(&nlstrippedbuf[start], end - start, width, &buffer, num_indent_spaces, bAllowHyphenation);
 
 		cv_strncat(output, buffer.data, buffer.length);
+
 	}
+	output->length = strlen(output->data) + 1;
+
 	PrintBuffer(output->data, output->length);
 	reflow_intstack_destroy(&paragraphbounds);
 	cv_destroy(&buffer);

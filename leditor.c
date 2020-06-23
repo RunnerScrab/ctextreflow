@@ -20,11 +20,42 @@ struct LineEditor
 	struct TextLine* lines;
 	size_t lines_reserved;
 	size_t lines_count;
-
+	unsigned char bSaveResult;
 };
+
+int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdDelete(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdSave(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdClear(struct LineEditor* pLE, struct LexerResult* plr);
+int EditorCmdHelp(struct LineEditor* pLE, struct LexerResult* plr);
+
+struct EditorCommand
+{
+	const char* name;
+	const char* usage;
+	const char* desc;
+	int (*cmdfp)(struct LineEditor*, struct LexerResult*);
+};
+
+struct EditorCommand g_editor_commands[] =
+{
+	{".c", ".c", "Clear buffer", EditorCmdClear},
+	{".d", ".d <line #>", "Delete line #", EditorCmdDelete},
+	{".f", ".f", "Format buffer", EditorCmdFormat},
+	{".h", ".h", "Show this help", EditorCmdHelp},
+	{".i", ".i <line #> <text>", "Insert text before line #",EditorCmdInsert},
+	{".p", ".p", "Show buffer", EditorCmdPrint},
+	{".q", ".q", "Quit without saving", EditorCmdQuit},
+	{".s", ".s", "Save buffer and quit", EditorCmdSave}
+};
+
 
 int LineEditor_Init(struct LineEditor* le)
 {
+	le->bSaveResult = 0;
 	cv_init(&le->buffer, 512);
 	le->lines_reserved = 128;
 	le->lines = (struct TextLine*) talloc(sizeof(struct TextLine) * le->lines_reserved);
@@ -143,60 +174,38 @@ void LineEditor_DeleteLine(struct LineEditor* le, size_t line_idx)
 	tfree(temp);
 }
 
-struct EditorCommand
+int EditorCmdCmp(const void* pA, const void* pB)
 {
-	const char* name;
-	int (*cmdfp)(struct LineEditor*, struct LexerResult*);
-};
-
-
-int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr)
-{
-	return -1;
+	struct EditorCommand* pCmd = ((struct EditorCommand*) pB);
+	return strcmp((const char*) pA, pCmd->name);
 }
 
 int EditorCmdPrint(struct LineEditor* pLE, struct LexerResult* plr)
 {
 	if(pLE->buffer.length)
 	{
-	size_t idx = 0;
-	size_t linebuf_reserved = 512;
-	char* linebuf = talloc(linebuf_reserved);
-	for(; idx < pLE->lines_count; ++idx)
-	{
-		size_t linelen = pLE->lines[idx].length;
-		if(linebuf_reserved < linelen)
+		size_t idx = 0;
+		size_t linebuf_reserved = 512;
+		char* linebuf = talloc(linebuf_reserved);
+		for(; idx < pLE->lines_count; ++idx)
 		{
-			linebuf_reserved <<= 1;
-			linebuf = trealloc(linebuf, linebuf_reserved);
+			size_t linelen = pLE->lines[idx].length;
+			if(linebuf_reserved < linelen)
+			{
+				linebuf_reserved <<= 1;
+				linebuf = trealloc(linebuf, linebuf_reserved);
+			}
+			linebuf[linelen] = 0;
+			memcpy(linebuf, &pLE->buffer.data[pLE->lines[idx].start], linelen);
+			printf("%02lu] %s\n", idx, linebuf);
 		}
-		linebuf[linelen] = 0;
-		memcpy(linebuf, &pLE->buffer.data[pLE->lines[idx].start], linelen);
-		printf("%02lu] %s\n", idx, linebuf);
-	}
-	tfree(linebuf);
+		tfree(linebuf);
 	}
 	else
 	{
 		printf("Buffer is empty.\n");
 	}
 	return 0;
-}
-
-int EditorCmdRebuildLines(struct LineEditor* pLE, struct LexerResult* plr)
-{
-	LineEditor_RebuildLineIndices(pLE, 0);
-	size_t idx = 0;
-	for(; idx < pLE->lines_count; ++idx)
-		printf("%lu %lu\n", pLE->lines[idx].start, pLE->lines[idx].length);
-	return 0;
-}
-
-int EditorCmdCmp(const void* pA, const void* pB)
-{
-	struct EditorCommand* pCmd = ((struct EditorCommand*) pB);
-	printf("Comparing %s to %s\n", (const char*) pA, pCmd->name);
-	return strcmp((const char*) pA, pCmd->name);
 }
 
 int EditorCmdFormat(struct LineEditor* pLE, struct LexerResult* plr)
@@ -262,28 +271,45 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 	return 0;
 }
 
+
+int EditorCmdQuit(struct LineEditor* pLE, struct LexerResult* plr)
+{
+	pLE->bSaveResult = 0;
+	return -1;
+}
+
+int EditorCmdSave(struct LineEditor* pLE, struct LexerResult* plr)
+{
+
+	pLE->bSaveResult = 1;
+	return -1;
+}
+
 int EditorCmdClear(struct LineEditor* pLE, struct LexerResult* plr)
 {
+	pLE->bSaveResult = 0;
 	cv_clear(&pLE->buffer);
 	LineEditor_RebuildLineIndices(pLE, 0);
+	return 0;
+}
+
+int EditorCmdHelp(struct LineEditor* pLE, struct LexerResult* plr)
+{
+	size_t idx = 0;
+	size_t len = sizeof(g_editor_commands)/sizeof(struct EditorCommand);
+	printf("%20s   %-20s\n", "Command/Usage", "Description");
+	printf("-----------------------------------------------------\n");
+	for(; idx < len; ++idx)
+	{
+		printf("%20s   %-20s\n", g_editor_commands[idx].usage,
+			g_editor_commands[idx].desc);
+	}
 	return 0;
 }
 
 int main(void)
 {
 	struct LineEditor editor;
-
-	struct EditorCommand commands[] =
-		{
-			{".c", EditorCmdClear},
-			{".d", EditorCmdDelete},
-			{".f", EditorCmdFormat},
-			{".i", EditorCmdInsert},
-			{".p", EditorCmdPrint},
-			{".q", EditorCmdQuit},
-			{".r", EditorCmdRebuildLines}
-		};
-
 
 	LineEditor_Init(&editor);
 
@@ -317,10 +343,10 @@ int main(void)
 				LexerResult_LexString(&lexresult, buf, bread);
 
 				char* cmdstr = LexerResult_GetTokenAt(&lexresult, 0);
-				printf("cmdstr is '%s'\n", cmdstr);
+
 				struct EditorCommand* pCmd = (struct EditorCommand*)
-					bsearch(cmdstr, commands,
-						sizeof(commands)/sizeof(struct EditorCommand),
+					bsearch(cmdstr, g_editor_commands,
+						sizeof(g_editor_commands)/sizeof(struct EditorCommand),
 						sizeof(struct EditorCommand),
 						EditorCmdCmp);
 
@@ -341,6 +367,14 @@ int main(void)
 			break;
 		}
 	}
+
+	if(editor.bSaveResult)
+	{
+		printf("Saving result:\n%s",
+			editor.buffer.data);
+	}
+
+
 	tfree(buf);
 	LineEditor_Destroy(&editor);
 	LexerResult_Destroy(&lexresult);

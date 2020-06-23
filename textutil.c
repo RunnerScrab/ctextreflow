@@ -401,11 +401,34 @@ static void ReflowParagraph(const char* text, size_t len, const int width, cv_t*
 	unsigned char bAllowHyphenation)
 {
 	//Uses a shortest paths method to solve optimization problem
+
 	if(len <= width)
 	{
+		printf("Running short line case.\n");
 		cv_strncat(output, text, len);
+		const char* p = lastnonspace(output->data,
+					strnlen(output->data, output->length));
+		if(p)
+		{
+			int offset = (p - output->data) + 1;
+			if(offset < output->length)
+			{
+				printf("Chopping a '%c' off.\n", output->data[offset]);
+				output->data[offset] = '\n';
+			}
+			else
+			{
+				printf("Offset %u was greater than output length %u\n", offset,
+					output->length);
+			}
+		}
+		else
+		{
+			printf("Didn't find p\n");
+		}
 		return;
 	}
+
 	reflow_strarray_t words;
 	reflow_strarray_create(&words, 64);
 

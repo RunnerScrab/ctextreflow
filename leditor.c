@@ -238,7 +238,6 @@ int EditorCmdDelete(struct LineEditor* pLE, struct LexerResult* plr)
 
 	char* pos_str = LexerResult_GetTokenAt(plr, 1);
 	size_t delete_idx = atoi(pos_str);
-	printf("Delete idx was %lu, parsed from '%s'\n", delete_idx, pos_str);
 
 	LineEditor_DeleteLine(pLE, delete_idx);
 	return 0;
@@ -255,7 +254,6 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 
 	char* pos_str = LexerResult_GetTokenAt(plr, 1);
 	size_t insert_idx = atoi(pos_str);
-	printf("Insert idx was %lu, parsed from '%s'\n", insert_idx, pos_str);
 
 	if(tokencount > 2)
 	{
@@ -264,7 +262,6 @@ int EditorCmdInsert(struct LineEditor* pLE, struct LexerResult* plr)
 		char* temp = malloc(insertstr_len + 2);
 		memset(temp, 0, insertstr_len + 2);
 		snprintf(temp, insertstr_len + 2, "%s\n", insertstr);
-		printf("Performing insert of '%s'.\n", temp);
 		LineEditor_InsertAt(pLE, insert_idx, temp, insertstr_len + 2);
 		free(temp);
 	}
@@ -322,6 +319,7 @@ int main(void)
 	LexerResult_Prepare(&lexresult);
 	for(;;)
 	{
+		printf("%02lu>", editor.lines_count);
 		ssize_t bread = getline(&buf, &linelen, stdin);
 
 		buf[bread] = 0;

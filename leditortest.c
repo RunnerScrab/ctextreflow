@@ -34,8 +34,8 @@ int main(void)
 				memset(buf, 0, linelimit);
 				continue;
 				}*/
-			if(buf[0] == '.')
-				buf[bread - 1] = 0;
+			//if(buf[0] == '.')
+			//buf[bread - 1] = 0;
 
 			if(LineEditor_ProcessInput(&editor, buf, bread) < 0)
 			{

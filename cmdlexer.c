@@ -98,7 +98,7 @@ void LexerResult_LexString(struct LexerResult* lr, const char* str, size_t len)
 	char* pstr = copy;
 	do
 	{
-		result = strtok_r(pstr, " ", &saveptr);
+		result = strtok_r(pstr, " \n", &saveptr);
 		if(result)
 		{
 			LexerResult_AddToken(lr, result - copy, result,
